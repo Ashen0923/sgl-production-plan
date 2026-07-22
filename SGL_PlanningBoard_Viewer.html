@@ -46,6 +46,9 @@ button:active{transform:scale(.97)}
 @keyframes progress{from{width:0%}to{width:100%}}
 
 /* ── Mobile & Tablet Responsive ─────────────────────────────────────── */
+/* Prevent blue background showing when board is zoomed */
+body{background:#fff!important;}
+#root,#root>div{background:#fff!important;}
 @media(max-width:768px){
   .nav-bar{padding:0 12px!important;height:52px!important;}
   .nav-title{font-size:13px!important;}
@@ -983,8 +986,7 @@ function PlanningBoardView({styles,colorMode,onEdit,selectMode,selectedId,onSele
     el("div",{style:{flex:1,overflowX:"auto",overflowY:"auto",border:"none",background:"#fff",minHeight:0}},
       el("div",{style:{width:totalW,position:"relative",
         transform:"scale("+boardZoom+")",transformOrigin:"top left",
-        transition:"transform .15s",background:"#fff",
-        minWidth:"100%"}},
+        transition:"transform .15s",background:"#fff"}},
 
         // Month header
         el("div",{style:{position:"sticky",top:0,zIndex:30,height:HDR_H/2,display:"flex",background:NAVY,marginLeft:LBL_W}},
@@ -3106,12 +3108,17 @@ ReactDOM.render(el(ErrorBoundary,{},el(ViewerApp,{})),document.getElementById("r
 const isMobile=()=>window.innerWidth<=1024||('ontouchstart' in window);
 
 // Floating zoom buttons — hook into React boardZoom state via custom events
-document.getElementById('zoomIn').addEventListener('click',()=>{
-  if(window.__viewerZoomIn)window.__viewerZoomIn();
-});
-document.getElementById('zoomOut').addEventListener('click',()=>{
-  if(window.__viewerZoomOut)window.__viewerZoomOut();
-});
+// Zoom buttons — check window function is ready before calling
+function tryZoom(dir){
+  const fn=dir==='in'?window.__viewerZoomIn:window.__viewerZoomOut;
+  if(typeof fn==='function'){fn();}
+  else{
+    // React not mounted yet — retry after short delay
+    setTimeout(()=>tryZoom(dir),100);
+  }
+}
+document.getElementById('zoomIn').addEventListener('click',()=>tryZoom('in'));
+document.getElementById('zoomOut').addEventListener('click',()=>tryZoom('out'));
 
 // Block detail popup
 const popup=document.getElementById('blockPopup');
