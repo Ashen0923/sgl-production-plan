@@ -2682,46 +2682,48 @@ function StyleManagerPage({styles,obMap,onExport,page:currentPage}){
 }
 
 function LoadingScreen({status}){
-  return el("div",{style:{minHeight:"100vh",background:NAVY,display:"flex",flexDirection:"column",
+  const isMob=window.innerWidth<768;
+  return el("div",{style:{
+    width:"100%",height:"100vh",background:NAVY,display:"flex",flexDirection:"column",
     alignItems:"center",justifyContent:"center",gap:0,fontFamily:"'DM Sans',sans-serif",
-    position:"relative",overflow:"hidden"}},
+    position:"fixed",top:0,left:0,right:0,bottom:0,overflow:"hidden",zIndex:9999}},
 
-    // Animated background rings
-    el("div",{style:{position:"absolute",width:600,height:600,borderRadius:"50%",
+    // Animated background rings — sized for mobile
+    el("div",{style:{position:"absolute",width:isMob?280:600,height:isMob?280:600,borderRadius:"50%",
       border:"1px solid rgba(224,123,57,.08)",top:"50%",left:"50%",
       transform:"translate(-50%,-50%)",animation:"spin 12s linear infinite"}}),
-    el("div",{style:{position:"absolute",width:400,height:400,borderRadius:"50%",
+    el("div",{style:{position:"absolute",width:isMob?190:400,height:isMob?190:400,borderRadius:"50%",
       border:"1px solid rgba(224,123,57,.12)",top:"50%",left:"50%",
       transform:"translate(-50%,-50%)",animation:"spin 8s linear infinite reverse"}}),
-    el("div",{style:{position:"absolute",width:240,height:240,borderRadius:"50%",
+    el("div",{style:{position:"absolute",width:isMob?110:240,height:isMob?110:240,borderRadius:"50%",
       border:"1px solid rgba(224,123,57,.18)",top:"50%",left:"50%",
       transform:"translate(-50%,-50%)",animation:"spin 5s linear infinite"}}),
 
     // Center content
-    el("div",{style:{display:"flex",flexDirection:"column",alignItems:"center",gap:28,
-      zIndex:1,padding:32}},
+    el("div",{style:{display:"flex",flexDirection:"column",alignItems:"center",
+      gap:isMob?18:28,zIndex:1,padding:isMob?20:32,width:"100%",maxWidth:400}},
 
       // Logos row
-      el("div",{style:{display:"flex",alignItems:"center",gap:20}},
+      el("div",{style:{display:"flex",alignItems:"center",gap:16}},
         el("img",{src:"https://www.star.lk/wp-content/uploads/2024/12/star-logo.svg",
-          alt:"STAR",height:52,style:{filter:"brightness(0) invert(1)"},
+          alt:"STAR",height:isMob?36:52,style:{filter:"brightness(0) invert(1)"},
           onError:ev=>ev.target.style.display="none"}),
-        el("div",{style:{width:1,height:40,background:"rgba(255,255,255,.2)"}}),
-        el("img",{src:"https://www.end2end.lk/images/logo-2.png",alt:"End2End",height:32,
-          style:{background:"rgba(255,255,255,.92)",borderRadius:6,padding:"3px 10px"},
+        el("div",{style:{width:1,height:30,background:"rgba(255,255,255,.2)"}}),
+        el("img",{src:"https://www.end2end.lk/images/logo-2.png",alt:"End2End",height:isMob?24:32,
+          style:{background:"rgba(255,255,255,.92)",borderRadius:6,padding:"3px 8px"},
           onError:ev=>ev.target.style.display="none"})
       ),
 
       // Title
-      el("div",{style:{textAlign:"center"}},
-        el("h1",{style:{color:"#fff",fontSize:26,fontWeight:700,margin:"0 0 8px",letterSpacing:.3}},
+      el("div",{style:{textAlign:"center",padding:"0 12px"}},
+        el("h1",{style:{color:"#fff",fontSize:isMob?20:26,fontWeight:700,margin:"0 0 8px",letterSpacing:.3}},
           "SGL Planning Board Viewer"),
-        el("p",{style:{color:"rgba(255,255,255,.4)",fontSize:13,margin:0}},
+        el("p",{style:{color:"rgba(255,255,255,.4)",fontSize:isMob?12:13,margin:0}},
           "Loading your production plan...")
       ),
 
       // Animated loading bar
-      el("div",{style:{width:320,display:"flex",flexDirection:"column",gap:10}},
+      el("div",{style:{width:"85%",maxWidth:320,display:"flex",flexDirection:"column",gap:10}},
         el("div",{style:{width:"100%",height:5,background:"rgba(255,255,255,.08)",
           borderRadius:10,overflow:"hidden"}},
           el("div",{style:{height:"100%",background:"linear-gradient(90deg,"+ORANGE+",#f59e0b)",
@@ -2734,7 +2736,7 @@ function LoadingScreen({status}){
       // Spinning dots
       el("div",{style:{display:"flex",gap:8,marginTop:4}},
         [0,1,2].map(i=>el("div",{key:i,style:{
-          width:7,height:7,borderRadius:"50%",background:ORANGE,
+          width:isMob?6:7,height:isMob?6:7,borderRadius:"50%",background:ORANGE,
           opacity:.3,animation:"spin 1.2s ease-in-out "+(i*0.2)+"s infinite alternate"}}))
       )
     )
