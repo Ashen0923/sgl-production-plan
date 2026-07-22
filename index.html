@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Planning Board"/>
 <title>SGL Planning Board Viewer</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
@@ -3067,6 +3070,19 @@ function ViewerApp(){
 
 ReactDOM.render(el(ErrorBoundary,{},el(ViewerApp,{})),document.getElementById("root"));
 
+</script>
+<script>
+// Fix for iOS PWA standalone mode
+if(window.navigator.standalone){
+  // Prevent links from opening in new browser
+  document.addEventListener('click',function(e){
+    var a=e.target.closest('a');
+    if(a&&a.href&&a.href.startsWith(window.location.origin)){
+      e.preventDefault();
+      window.location.href=a.href;
+    }
+  });
+}
 </script>
 </body>
 </html>
