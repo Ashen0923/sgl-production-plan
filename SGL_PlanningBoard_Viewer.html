@@ -3108,17 +3108,18 @@ ReactDOM.render(el(ErrorBoundary,{},el(ViewerApp,{})),document.getElementById("r
 const isMobile=()=>window.innerWidth<=1024||('ontouchstart' in window);
 
 // Floating zoom buttons — hook into React boardZoom state via custom events
-// Zoom buttons — check window function is ready before calling
+// Zoom buttons — wait for DOM then attach listeners
 function tryZoom(dir){
   const fn=dir==='in'?window.__viewerZoomIn:window.__viewerZoomOut;
   if(typeof fn==='function'){fn();}
-  else{
-    // React not mounted yet — retry after short delay
-    setTimeout(()=>tryZoom(dir),100);
-  }
+  else{setTimeout(()=>tryZoom(dir),100);}
 }
-document.getElementById('zoomIn').addEventListener('click',()=>tryZoom('in'));
-document.getElementById('zoomOut').addEventListener('click',()=>tryZoom('out'));
+window.addEventListener('DOMContentLoaded',function(){
+  const zi=document.getElementById('zoomIn');
+  const zo=document.getElementById('zoomOut');
+  if(zi)zi.addEventListener('click',()=>tryZoom('in'));
+  if(zo)zo.addEventListener('click',()=>tryZoom('out'));
+});
 
 // Block detail popup
 const popup=document.getElementById('blockPopup');
