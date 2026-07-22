@@ -2809,9 +2809,13 @@ function ViewerApp(){
       const parsed=parseFRPlan(frWs);
       await new Promise(r=>setTimeout(r,0));
 
-      // ── OB Data ───────────────────────────────────────────────────────
-      if(showLoading)setLoadStatus("Fetching OB Data from GitHub...");
+      // ── OB Data — skip on mobile to prevent memory crash ────────────
+      if(showLoading)setLoadStatus("Rendering planning board...");
+      const isMobileDevice=/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
       let obMapResult={};
+      if(isMobileDevice){
+        console.log("Mobile device — skipping OB data fetch to save memory");
+      } else
       try{
         const obMetaRes=await fetch(GH_OB_URL,{
           headers:{Authorization:"Bearer "+GH_TOKEN,Accept:"application/vnd.github+json"},
@@ -2855,9 +2859,8 @@ function ViewerApp(){
             obMapResult=parseOB(obWs);
           }
         }
-      }catch(obErr){
+      } catch(obErr){
         console.warn("OB data fetch failed (non-fatal):",obErr.message);
-        // Continue without OB data — planning board still works
       }
 
       // Yield to browser before setting state to avoid blocking render
