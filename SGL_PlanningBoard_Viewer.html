@@ -3172,13 +3172,7 @@ window.addEventListener('DOMContentLoaded',function(){
 });// end DOMContentLoaded
 
 // ── Mobile enhancements ────────────────────────────────────────────────────
-// Register service worker — only on actual deployed site, not preview/local
-if('serviceWorker' in navigator && location.hostname!=='localhost' && !location.hostname.includes('claudeusercontent')){
-  window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('service-worker.js')
-      .catch(e=>console.log('SW reg failed:',e));
-  });
-}
+// Service worker disabled
 
 </script>
 
