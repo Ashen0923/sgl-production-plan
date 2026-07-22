@@ -11,6 +11,8 @@
 <link rel="manifest" href="manifest.json"/>
 <link rel="apple-touch-icon" href="icon-192.png"/>
 <title>SGL Planning Board Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -18,7 +20,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'DM Sans',system-ui,sans-serif;background:#0B2A4A;color:#1a1a2e;min-height:100vh}
 input,select,textarea{font-family:inherit;color:#1a1a2e;background:#fff;outline:none}
@@ -46,9 +47,8 @@ button:active{transform:scale(.97)}
 @keyframes progress{from{width:0%}to{width:100%}}
 
 /* ── Mobile & Tablet Responsive ─────────────────────────────────────── */
-/* Prevent blue background showing when board is zoomed */
-body{background:#fff!important;}
-#root,#root>div{background:#fff!important;}
+/* White background only for board area, not loading screen */
+.board-scroll-area{background:#fff;}
 @media(max-width:768px){
   .nav-bar{padding:0 12px!important;height:52px!important;}
   .nav-title{font-size:13px!important;}
