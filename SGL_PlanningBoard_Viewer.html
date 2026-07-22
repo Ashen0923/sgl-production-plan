@@ -100,7 +100,13 @@ body{background:#fff!important;}
 </style>
 </head>
 <body>
-<div id="root"></div>
+<div id="root"><div style="min-height:100vh;background:#0B2A4A;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;font-family:sans-serif;">
+  <div style="color:#fff;font-size:18px;font-weight:600;">Loading Planning Board...</div>
+  <div style="color:rgba(255,255,255,.4);font-size:13px;">Please ensure you have an internet connection</div>
+  <div style="width:200px;height:4px;background:rgba(255,255,255,.1);border-radius:4px;overflow:hidden;margin-top:8px;">
+    <div style="height:100%;background:#E07B39;border-radius:4px;animation:progress 1.5s ease-in-out infinite;"></div>
+  </div>
+</div></div>
 <script>
 
 // GH constants defined below in shared code — just add refresh interval and FR URL alias
