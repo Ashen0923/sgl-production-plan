@@ -1,20 +1,9 @@
-const CACHE_NAME = 'sgl-planning-board-v1';
-const ASSETS = [
-  './SGL_PlanningBoard_Viewer.html',
-  './manifest.json',
-  './icon-192.png',
-  './icon-512.png',
-];
+const CACHE_NAME = 'sgl-planning-v2';
 
-// Install — cache core assets
 self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS))
-  );
   self.skipWaiting();
 });
 
-// Activate — clean old caches
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys().then(keys =>
@@ -24,36 +13,32 @@ self.addEventListener('activate', e => {
   self.clients.claim();
 });
 
-// Fetch — serve from cache, fallback to network
-// For GitHub API calls (production data) — always try network first
 self.addEventListener('fetch', e => {
-  const url = e.request.url;
+  const url = new URL(e.request.url);
 
-  // GitHub API — network first, no cache (always get latest plan)
-  if (url.includes('api.github.com')) {
-    e.respondWith(
-      fetch(e.request).catch(() =>
-        caches.match(e.request)
-      )
-    );
-    return;
+  // Only cache static assets — never intercept HTML or API calls
+  if (
+    e.request.method !== 'GET' ||
+    url.hostname.includes('github') ||
+    url.hostname.includes('googleapis') ||
+    url.hostname.includes('netlify') ||
+    e.request.headers.get('accept')?.includes('text/html')
+  ) {
+    return; // Let browser handle normally
   }
 
-  // App assets — cache first, fallback to network
-  e.respondWith(
-    caches.match(e.request).then(cached => {
-      if (cached) return cached;
-      return fetch(e.request).then(response => {
-        // Cache new assets dynamically
-        if (response && response.status === 200) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
-        }
-        return response;
-      }).catch(() => {
-        // Offline fallback — return cached viewer
-        return caches.match('./SGL_PlanningBoard_Viewer.html');
-      });
-    })
-  );
+  // For CDN assets (React, XLSX etc) — cache them
+  if (url.hostname.includes('cdnjs') || url.hostname.includes('jsdelivr')) {
+    e.respondWith(
+      caches.open(CACHE_NAME).then(cache =>
+        cache.match(e.request).then(cached => {
+          if (cached) return cached;
+          return fetch(e.request).then(response => {
+            if (response.ok) cache.put(e.request, response.clone());
+            return response;
+          });
+        })
+      )
+    );
+  }
 });
