@@ -2,10 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"/>
-<meta name="apple-mobile-web-app-capable" content="yes"/>
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-<meta name="apple-mobile-web-app-title" content="Planning Board"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>SGL Planning Board Viewer</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
@@ -16,7 +13,25 @@
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;max-width:100%;overflow-x:hidden}
 body{font-family:'DM Sans',system-ui,sans-serif;background:#0B2A4A;color:#1a1a2e;min-height:100vh}
+#root{width:100%;max-width:100%;overflow-x:hidden}
+@media(max-width:768px){
+  .pbv-topbar{flex-wrap:wrap;height:auto!important;padding:10px 12px!important;gap:8px}
+  .pbv-topbar>div{gap:8px!important}
+  .pbv-legend{padding:6px 12px!important}
+  .pbv-legend span{font-size:9px!important}
+  .pbv-viewpanel{width:100%!important}
+  .pbv-updated,.pbv-poweredby,.pbv-divider{display:none!important}
+  .pbv-btn-label{display:none}
+  .pbv-zoom button{padding:9px 13px!important}
+}
+@media(max-width:430px){
+  .pbv-topbar{justify-content:flex-start!important}
+  .pbv-topbar>div:first-child{width:100%}
+  .pbv-topbar>div:last-child{width:100%;justify-content:flex-start!important}
+  .pbv-zoom{order:-1}
+}
 input,select,textarea{font-family:inherit;color:#1a1a2e;background:#fff;outline:none}
 input:focus,select:focus,textarea:focus{border-color:#0B2A4A!important;box-shadow:0 0 0 3px rgba(11,42,74,.08)}
 button{font-family:inherit;transition:all .15s;cursor:pointer}
@@ -31,8 +46,12 @@ button:active{transform:scale(.97)}
 .resize-handle{position:absolute;right:0;top:0;width:8px;height:100%;cursor:ew-resize;background:rgba(255,255,255,.2);border-radius:0 7px 7px 0;z-index:2}
 .resize-handle:hover{background:rgba(255,255,255,.5)}
 .drop-ghost{position:absolute;border-radius:7px;pointer-events:none;border:2.5px dashed rgba(255,255,255,.7);opacity:.65;z-index:8}
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
-.modal{background:#fff;border-radius:16px;padding:26px;min-width:380px;max-width:520px;box-shadow:0 24px 64px rgba(0,0,0,.18)}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px);padding:16px}
+.modal{background:#fff;border-radius:16px;padding:26px;min-width:380px;max-width:520px;width:100%;box-shadow:0 24px 64px rgba(0,0,0,.18)}
+@media(max-width:480px){
+  .modal-overlay{padding:10px}
+  .modal{min-width:0;width:100%;max-width:100%;padding:18px;border-radius:12px}
+}
 .tooltip{position:fixed;background:#0B2A4A;color:#fff;border-radius:8px;padding:8px 12px;font-size:11px;font-family:'DM Mono',monospace;pointer-events:none;z-index:9999;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,.3)}
 .pb-table{border-collapse:collapse;width:100%}
 .pb-table th,.pb-table td{border:0.5px solid #e2e8f0}
@@ -885,6 +904,7 @@ function PlanningBoardView({styles,colorMode,onEdit,selectMode,selectedId,onSele
     return res;
   },[lineSimMode,lineSimSelectedId,styles,obMap,lineSimFilters]);
   const {show,hide,move,Tooltip}=useTooltip();
+  const [detailStyle,setDetailStyle]=useState(null);
   if(!styles.length)return el(NoData,{});
 
   const allLines=[...new Set(styles.map(s=>s.line))].sort((a,b)=>a-b);
@@ -934,7 +954,7 @@ function PlanningBoardView({styles,colorMode,onEdit,selectMode,selectedId,onSele
 
   return el("div",{style:{position:"relative",height:"100%",display:"flex",flexDirection:"column"}},
     Tooltip,
-    el("div",{style:{flex:1,overflowX:"auto",overflowY:"auto",border:"none",background:"#fff"}},
+    el("div",{style:{flex:1,minWidth:0,maxWidth:"100%",overflowX:"auto",overflowY:"auto",border:"none",background:"#fff"}},
       el("div",{style:{width:totalW,position:"relative",
         transform:"scale("+boardZoom+")",transformOrigin:"top left",
         transition:"transform .15s"}},
@@ -1009,7 +1029,7 @@ function PlanningBoardView({styles,colorMode,onEdit,selectMode,selectedId,onSele
 
                 return el("div",{key:s.id,
                   className:"canvas-block"+(isDimmed?" dimmed":"")+(isSelected?" focused":""),
-                  onClick:lineSimMode&&onLineSimSelect?()=>onLineSimSelect(s.id):(selectMode?()=>onSelectStyle(s.id):undefined),
+                  onClick:lineSimMode&&onLineSimSelect?()=>onLineSimSelect(s.id):(selectMode?()=>onSelectStyle(s.id):()=>setDetailStyle(s)),
                   onMouseEnter:e=>show(e,
                     `${s.styleName}\nStart: ${fmtDate(s.startDate)}  →  End: ${fmtDate(s.endDate)}\nDel: ${fmtDate(s.delDate)}`
                   ),
@@ -1018,7 +1038,7 @@ function PlanningBoardView({styles,colorMode,onEdit,selectMode,selectedId,onSele
                   style:{
                     position:"absolute",left,top:4,width,height:ROW_H-8,
                     background:color,borderRadius:7,
-                    cursor:lineSimMode?'pointer':selectMode?"pointer":"default",
+                    cursor:"pointer",
                     opacity:lineSimMode&&lineSimSelectedId?(lsSelected?1:lsPasses?1:0.1):(isDimmed?0.35:1),
                     transition:'opacity .2s',
                     boxShadow:lsSelected?"0 0 0 3px #fff,0 0 0 5px #7c3aed,0 4px 20px rgba(124,58,237,.5)":
@@ -1144,6 +1164,57 @@ function PlanningBoardView({styles,colorMode,onEdit,selectMode,selectedId,onSele
             )
           );
         })
+      )
+    ),
+    detailStyle&&el(StyleDetailModal,{style:detailStyle,onClose:()=>setDetailStyle(null)})
+  );
+}
+
+function StyleDetailModal({style:s,onClose}){
+  const Row=(k,v)=>v==null||v===""?null:el("div",{key:k,style:{display:"flex",justifyContent:"space-between",
+    padding:"7px 0",borderBottom:"1px solid #f1f5f9"}},
+    el("span",{style:{fontSize:12,color:"#64748b",fontWeight:500}},k),
+    el("span",{style:{fontSize:12,color:"#0f172a",fontWeight:600}},v));
+  return el("div",{onClick:onClose,className:"modal-overlay"},
+    el("div",{onClick:e=>e.stopPropagation(),className:"modal",style:{width:"100%",maxWidth:420,maxHeight:"85vh",overflowY:"auto"}},
+      el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14,gap:10}},
+        el("div",{},
+          el("h2",{style:{margin:0,fontSize:17,fontWeight:700,color:"#0f172a"}},s.styleName||"—"),
+          el("p",{style:{margin:"3px 0 0",fontSize:12,color:"#64748b"}},s.gmtType||"")
+        ),
+        el("button",{onClick:onClose,style:{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#94a3b8",lineHeight:1}},"×")
+      ),
+      el("div",{style:{display:"flex",flexDirection:"column"}},
+        Row("Line","L-"+String(s.line).padStart(2,"0")),
+        Row("Start Date",fmtDate(s.startDate)),
+        Row("End Date",fmtDate(s.endDate)),
+        Row("Delivery Date",fmtDate(s.delDate)),
+        Row("Target Cut Date",fmtDate(s.tgtCutDate)),
+        Row("Planned Qty",s.plnQty?.toLocaleString()),
+        Row("Ordered Qty",s.ordQty?.toLocaleString()),
+        Row("Daily Rate",s.dailyQty!=null?s.dailyQty+"/day":null),
+        Row("Production Days",s.prodDays!=null?s.prodDays+" days":null),
+        Row("Target",s.tgt),
+        Row("Efficiency",s.eff!=null?s.eff+"%":null)
+      ),
+      s.isMerged&&s.subStyles&&s.subStyles.length>0&&el("div",{style:{marginTop:16}},
+        el("p",{style:{margin:"0 0 8px",fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:.5}},
+          "Merged Styles ("+s.subStyles.length+")"),
+        el("div",{style:{display:"flex",flexDirection:"column",gap:8}},
+          s.subStyles.map((sub,i)=>el("div",{key:i,style:{border:"0.5px solid #e2e8f0",borderRadius:8,padding:10}},
+            el("p",{style:{margin:"0 0 4px",fontSize:12,fontWeight:700,color:"#0f172a"}},sub.styleName),
+            el("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"2px 10px",fontSize:11,color:"#64748b"}},
+              el("span",{},"QTY: "+(sub.plnQty||0).toLocaleString()),
+              el("span",{},"Daily: "+(sub.dailyQty||0)+"/day"),
+              el("span",{},"Days: "+(sub.prodDays||0)),
+              el("span",{},"Ord: "+(sub.ordQty||0).toLocaleString()),
+              el("span",{},"TGT: "+(sub.tgt||0)),
+              el("span",{},"Eff: "+(sub.eff||0)+"%")
+            ),
+            sub.delDate&&el("p",{style:{margin:"4px 0 0",fontSize:11,color:"#dc2626",fontWeight:600}},
+              "DEL: "+fmtDateShort(sub.delDate))
+          ))
+        )
       )
     )
   );
@@ -2829,7 +2900,7 @@ function ViewerApp(){
         borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",marginTop:8}},"Retry")
   );
 
-  return el("div",{style:{minHeight:"100vh",background:"#F0F2F7",display:"flex",flexDirection:"column"}},
+  return el("div",{style:{minHeight:"100vh",width:"100%",maxWidth:"100%",overflowX:"hidden",background:"#F0F2F7",display:"flex",flexDirection:"column"}},
     refreshing&&el("div",{style:{position:"fixed",top:60,left:"50%",transform:"translateX(-50%)",
       zIndex:9999,background:"rgba(11,42,74,.92)",color:"#fff",
       padding:"8px 20px",borderRadius:20,fontSize:12,fontWeight:600,
@@ -2872,7 +2943,7 @@ function ViewerApp(){
 
     viewPanelOpen&&page==="board"&&el("div",{},
       el("div",{onClick:()=>setViewPanelOpen(false),style:{position:"fixed",inset:0,zIndex:200,background:"transparent"}}),
-      el("div",{style:{position:"fixed",top:58,right:0,width:300,background:"#0f1f3d",
+      el("div",{className:"pbv-viewpanel",style:{position:"fixed",top:58,right:0,width:300,maxWidth:"100vw",background:"#0f1f3d",
         borderLeft:"1px solid rgba(255,255,255,.12)",boxShadow:"-8px 0 32px rgba(0,0,0,.4)",
         zIndex:201,display:"flex",flexDirection:"column",maxHeight:"calc(100vh - 58px)",overflowY:"auto"}},
         el("div",{style:{padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,.1)",display:"flex",alignItems:"center",justifyContent:"space-between"}},
@@ -2929,7 +3000,7 @@ function ViewerApp(){
       )
     ),
 
-    el("div",{style:{background:NAVY,padding:"0 22px",display:"flex",alignItems:"center",
+    el("div",{className:"pbv-topbar",style:{background:NAVY,padding:"0 22px",display:"flex",alignItems:"center",
       justifyContent:"space-between",height:58,boxShadow:"0 2px 12px rgba(0,0,0,.18)",flexShrink:0}},
       el("div",{style:{display:"flex",alignItems:"center",gap:14}},
         el("img",{src:"https://www.star.lk/wp-content/uploads/2024/12/star-logo.svg",alt:"SGL",height:30,
@@ -2940,31 +3011,33 @@ function ViewerApp(){
           border:"0.5px solid rgba(251,191,36,.3)",borderRadius:4,padding:"2px 8px",marginLeft:8}},
           "⚠ Showing cached data")
       ),
-      el("div",{style:{display:"flex",alignItems:"center",gap:8}},
-        lastUpdated&&el("span",{style:{fontSize:10,color:"rgba(255,255,255,.3)",fontFamily:"'DM Mono',monospace"}},
+      el("div",{style:{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}},
+        lastUpdated&&el("span",{className:"pbv-updated",style:{fontSize:10,color:"rgba(255,255,255,.3)",fontFamily:"'DM Mono',monospace"}},
           "Updated "+lastUpdated.toLocaleTimeString()),
         el("button",{onClick:()=>fetchFromGitHub(false),title:"Refresh now",
           style:{padding:"4px 10px",border:"0.5px solid rgba(255,255,255,.2)",background:"transparent",
             color:"rgba(255,255,255,.5)",borderRadius:6,cursor:"pointer",fontSize:11,
             display:"flex",alignItems:"center",gap:4}},
-          el("i",{className:"ti ti-refresh",style:{fontSize:13}}),"Refresh"),
-        el("div",{style:{width:1,height:20,background:"rgba(255,255,255,.15)"}}),
+          el("i",{className:"ti ti-refresh",style:{fontSize:13}}),el("span",{className:"pbv-btn-label"},"Refresh")),
+        el("div",{className:"pbv-divider",style:{width:1,height:20,background:"rgba(255,255,255,.15)"}}),
         page==="board"&&el("button",{onClick:()=>setViewPanelOpen(p=>!p),
           style:{padding:"5px 14px",border:"0.5px solid "+(viewPanelOpen?"rgba(255,255,255,.7)":"rgba(255,255,255,.2)"),
             background:viewPanelOpen?"rgba(255,255,255,.15)":"transparent",
             color:viewPanelOpen?"#fff":"rgba(255,255,255,.65)",
             borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:500,
             display:"flex",alignItems:"center",gap:6}},
-          el("i",{className:"ti ti-adjustments-horizontal",style:{fontSize:14}}),"View Options"),
-        page==="board"&&el("div",{style:{display:"flex",alignItems:"center",gap:2,
+          el("i",{className:"ti ti-adjustments-horizontal",style:{fontSize:14}}),el("span",{className:"pbv-btn-label"},"View Options")),
+        page==="board"&&el("div",{className:"pbv-zoom",style:{display:"flex",alignItems:"center",gap:2,
           border:"0.5px solid rgba(255,255,255,.2)",borderRadius:8,overflow:"hidden",background:"rgba(255,255,255,.05)"}},
-          el("button",{onClick:()=>setBoardZoom(z=>Math.max(.5,+(z-.1).toFixed(1))),
-            style:{padding:"5px 10px",border:"none",background:"transparent",color:"rgba(255,255,255,.7)",fontSize:15,cursor:"pointer",fontWeight:700,lineHeight:1}},"−"),
+          el("button",{title:"Zoom out",onClick:()=>setBoardZoom(z=>Math.max(.5,+(z-.1).toFixed(1))),
+            style:{padding:"7px 12px",border:"none",background:"transparent",color:"rgba(255,255,255,.7)",cursor:"pointer",display:"flex",alignItems:"center"}},
+            el("i",{className:"ti ti-zoom-out",style:{fontSize:16}})),
           el("span",{style:{fontSize:11,color:"rgba(255,255,255,.6)",padding:"0 2px",minWidth:36,textAlign:"center",fontWeight:500}},Math.round(boardZoom*100)+"%"),
-          el("button",{onClick:()=>setBoardZoom(z=>Math.min(1.5,+(z+.1).toFixed(1))),
-            style:{padding:"5px 10px",border:"none",background:"transparent",color:"rgba(255,255,255,.7)",fontSize:15,cursor:"pointer",fontWeight:700,lineHeight:1}},"+")
+          el("button",{title:"Zoom in",onClick:()=>setBoardZoom(z=>Math.min(1.5,+(z+.1).toFixed(1))),
+            style:{padding:"7px 12px",border:"none",background:"transparent",color:"rgba(255,255,255,.7)",cursor:"pointer",display:"flex",alignItems:"center"}},
+            el("i",{className:"ti ti-zoom-in",style:{fontSize:16}}))
         ),
-        el("div",{style:{display:"flex",alignItems:"center",gap:6}},
+        el("div",{className:"pbv-poweredby",style:{display:"flex",alignItems:"center",gap:6}},
           el("span",{style:{color:"rgba(255,255,255,.25)",fontSize:10}},"Powered by"),
           el("img",{src:"https://www.end2end.lk/images/logo-2.png",alt:"End2End",height:24,
             style:{filter:"none",opacity:1,background:"rgba(255,255,255,.9)",borderRadius:5,padding:"2px 7px"},
@@ -2983,7 +3056,7 @@ function ViewerApp(){
       ))
     ),
 
-    page==="board"&&styles.length>0&&el("div",{style:{background:NAVY,padding:"6px 22px",
+    page==="board"&&styles.length>0&&el("div",{className:"pbv-legend",style:{background:NAVY,padding:"6px 22px",
       display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",flexShrink:0}},
       el("span",{style:{color:"rgba(255,255,255,.4)",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1,flexShrink:0}},"Legend:"),
       GMT_COLORS_MAP.map(([gmt,color])=>
@@ -3070,19 +3143,6 @@ function ViewerApp(){
 
 ReactDOM.render(el(ErrorBoundary,{},el(ViewerApp,{})),document.getElementById("root"));
 
-</script>
-<script>
-// Fix for iOS PWA standalone mode
-if(window.navigator.standalone){
-  // Prevent links from opening in new browser
-  document.addEventListener('click',function(e){
-    var a=e.target.closest('a');
-    if(a&&a.href&&a.href.startsWith(window.location.origin)){
-      e.preventDefault();
-      window.location.href=a.href;
-    }
-  });
-}
 </script>
 </body>
 </html>
