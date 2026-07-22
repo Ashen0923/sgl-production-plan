@@ -1,0 +1,3148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>SGL Planning Board Viewer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;max-width:100%;overflow-x:hidden}
+body{font-family:'DM Sans',system-ui,sans-serif;background:#0B2A4A;color:#1a1a2e;min-height:100vh}
+#root{width:100%;max-width:100%;overflow-x:hidden}
+@media(max-width:768px){
+  .pbv-topbar{flex-wrap:wrap;height:auto!important;padding:10px 12px!important;gap:8px}
+  .pbv-topbar>div{gap:8px!important}
+  .pbv-legend{padding:6px 12px!important}
+  .pbv-legend span{font-size:9px!important}
+  .pbv-viewpanel{width:100%!important}
+  .pbv-updated,.pbv-poweredby,.pbv-divider{display:none!important}
+  .pbv-btn-label{display:none}
+  .pbv-zoom button{padding:9px 13px!important}
+}
+@media(max-width:430px){
+  .pbv-topbar{justify-content:flex-start!important}
+  .pbv-topbar>div:first-child{width:100%}
+  .pbv-topbar>div:last-child{width:100%;justify-content:flex-start!important}
+  .pbv-zoom{order:-1}
+}
+input,select,textarea{font-family:inherit;color:#1a1a2e;background:#fff;outline:none}
+input:focus,select:focus,textarea:focus{border-color:#0B2A4A!important;box-shadow:0 0 0 3px rgba(11,42,74,.08)}
+button{font-family:inherit;transition:all .15s;cursor:pointer}
+button:active{transform:scale(.97)}
+::-webkit-scrollbar{height:5px;width:5px}
+::-webkit-scrollbar-track{background:#eee}
+::-webkit-scrollbar-thumb{background:#bbb;border-radius:3px}
+.fade{animation:fadeIn .25s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.canvas-block{position:absolute;border-radius:7px;overflow:hidden;user-select:none;transition:box-shadow .15s}
+.canvas-block:hover{box-shadow:0 6px 20px rgba(0,0,0,.28)!important}
+.resize-handle{position:absolute;right:0;top:0;width:8px;height:100%;cursor:ew-resize;background:rgba(255,255,255,.2);border-radius:0 7px 7px 0;z-index:2}
+.resize-handle:hover{background:rgba(255,255,255,.5)}
+.drop-ghost{position:absolute;border-radius:7px;pointer-events:none;border:2.5px dashed rgba(255,255,255,.7);opacity:.65;z-index:8}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px);padding:16px}
+.modal{background:#fff;border-radius:16px;padding:26px;min-width:380px;max-width:520px;width:100%;box-shadow:0 24px 64px rgba(0,0,0,.18)}
+@media(max-width:480px){
+  .modal-overlay{padding:10px}
+  .modal{min-width:0;width:100%;max-width:100%;padding:18px;border-radius:12px}
+}
+.tooltip{position:fixed;background:#0B2A4A;color:#fff;border-radius:8px;padding:8px 12px;font-size:11px;font-family:'DM Mono',monospace;pointer-events:none;z-index:9999;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,.3)}
+.pb-table{border-collapse:collapse;width:100%}
+.pb-table th,.pb-table td{border:0.5px solid #e2e8f0}
+.dimmed{opacity:0.22;transition:opacity .3s}
+.focused{opacity:1;transition:opacity .3s}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+@keyframes progress{from{width:0%}to{width:100%}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+
+// GH constants defined below in shared code — just add refresh interval and FR URL alias
+const REFRESH_INTERVAL=5*60*1000;
+
+window.onerror=function(msg,src,line,col,err){console.error("GLOBAL ERROR:",msg,"\nFile:",src,"Line:",line,"\nError:",err);return false;};
+window.onunhandledrejection=function(e){console.error("UNHANDLED PROMISE:",e.reason);};
+
+class ErrorBoundary extends React.Component{
+  constructor(p){super(p);this.state={error:null};}
+  static getDerivedStateFromError(e){return{error:e};}
+  componentDidCatch(e,info){console.error("REACT ERROR BOUNDARY:",e,info.componentStack);}
+  render(){
+    if(this.state.error)return React.createElement("div",{style:{padding:20,background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:8,margin:16}},
+      React.createElement("p",{style:{fontWeight:600,color:"#dc2626",marginBottom:8}},"Rendering Error — check console (F12)"),
+      React.createElement("pre",{style:{fontSize:11,color:"#7f1d1d",whiteSpace:"pre-wrap"}},this.state.error.message));
+    return this.props.children;
+  }
+}
+
+const {useState,useRef,useEffect,useCallback,useMemo}=React;
+const el=React.createElement;
+const NAVY="#0B2A4A",ORANGE="#E07B39";
+const COL_W=80,ROW_H=118,HDR_H=72,LBL_W=92;
+const DAYS=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const MONS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+// ─── Colour palettes ────────────────────────────────────────────────────────
+const STYLE_COLORS=["#1D4ED8","#6D28D9","#BE185D","#0F766E","#B45309","#B91C1C",
+  "#4338CA","#047857","#C2410C","#0369A1","#4D7C0F","#7E22CE","#9D174D","#065F46",
+  "#92400E","#0E7490","#1E40AF","#5B21B6","#166534","#1E3A5F"];
+// GMT_COLORS_MAP: ordered list of [exact-or-substring-match, color]
+// Exact GMT TYPE values from SGL_FR_Plan: BLAZER, BLOUSE, CASUAL JACKET, DRESS (GOWN),
+// FORMAL JACKET, LADIES SHIRT, MENS SHIRT, OUTER WEAR COAT, PANT (TROUSER), SHORT, SPECIAL JACKET, VEST
+const GMT_COLORS_MAP=[
+  ["OUTER WEAR COAT","#065F46"],  // dark teal
+  ["FORMAL JACKET",  "#9D174D"],  // rose
+  ["SPECIAL JACKET", "#C2410C"],  // burnt orange
+  ["CASUAL JACKET",  "#B91C1C"],  // red
+  ["LADIES SHIRT",   "#0369A1"],  // ocean blue
+  ["MENS SHIRT",     "#0F766E"],  // teal
+  ["BLAZER",         "#4338CA"],  // indigo
+  ["BLOUSE",         "#1D4ED8"],  // blue
+  ["PANT (TROUSER)", "#6D28D9"],  // purple
+  ["TROUSER",        "#6D28D9"],  // purple (fallback substring)
+  ["PANT",           "#5B21B6"],  // purple-dark
+  ["DRESS (GOWN)",   "#7E22CE"],  // violet
+  ["GOWN",           "#7E22CE"],  // violet (fallback substring)
+  ["DRESS",          "#BE185D"],  // pink
+  ["SHORT",          "#4D7C0F"],  // olive green
+  ["VEST",           "#92400E"],  // amber brown
+  ["JACKET",         "#B91C1C"],  // red (generic jacket fallback)
+  ["SHIRT",          "#047857"],  // green (generic shirt fallback)
+];
+function getGmtColor(gmtType){
+  if(!gmtType)return"#374151";
+  const u=gmtType.toUpperCase().trim();
+  for(const[k,c]of GMT_COLORS_MAP){if(u===k||u.includes(k))return c;}
+  return"#374151";
+}
+const LINE_COLORS=["#2563EB","#7C3AED","#DB2777","#0D9488","#D97706","#DC2626","#4F46E5","#059669","#EA580C"];
+
+// ─── Date helpers ────────────────────────────────────────────────────────────
+function excelSerialToDate(serial){
+  if(!serial&&serial!==0)return null;
+  if(serial instanceof Date){const d=new Date(serial);d.setHours(0,0,0,0);return d;}
+  if(typeof serial==="string"){
+    const n=parseFloat(serial);
+    if(!isNaN(n)&&n>40000)serial=n;
+    else{const d=new Date(serial);d.setHours(0,0,0,0);return isNaN(d)?null:d;}
+  }
+  if(typeof serial==="number"&&serial>40000){
+    // Convert Excel serial to local midnight date (avoid UTC offset issues)
+    const utcMs=Math.round((serial-25569)*86400*1000);
+    const utcDate=new Date(utcMs);
+    // Use local date parts to create a local midnight date
+    const d=new Date(utcDate.getUTCFullYear(),utcDate.getUTCMonth(),utcDate.getUTCDate());
+    d.setHours(0,0,0,0);return d;
+  }
+  return null;
+}
+function ds(d){if(!d)return"";return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+// Parse a date string "YYYY-MM-DD" as LOCAL midnight to avoid UTC timezone offset bugs
+function localDate(str){
+  if(!str)return null;
+  const[y,m,d]=str.split("-").map(Number);
+  const dt=new Date(y,m-1,d);dt.setHours(0,0,0,0);return dt;
+}
+function fmtDate(d){if(!d)return"—";return d.getDate()+" "+MONS[d.getMonth()]+" "+d.getFullYear();}
+function fmtDateShort(d){if(!d)return"—";return d.getDate()+" "+MONS[d.getMonth()];}
+function addDays(d,n){const r=new Date(d);r.setDate(r.getDate()+n);return r;}
+function diffDays(a,b){return Math.round((b-a)/(86400*1000));}
+// Add N working days (Mon-Sat) to a date
+function addWorkingDays(startDate,n){
+  let cur=new Date(startDate);cur.setHours(0,0,0,0);
+  let added=0;
+  while(added<n){
+    cur.setDate(cur.getDate()+1);
+    if(cur.getDay()!==0)added++;// skip Sunday
+  }
+  return cur;
+}
+// Get the date that is exactly N working days after startDate (inclusive of start = day 1)
+function workingDayEnd(startDate,prodDays){
+  // Start date is day 1. We need to go prodDays-1 more working days forward.
+  let cur=new Date(startDate);cur.setHours(0,0,0,0);
+  let count=1;
+  while(count<prodDays){
+    cur.setDate(cur.getDate()+1);
+    if(cur.getDay()!==0)count++;
+  }
+  return cur;
+}
+// Get next working day after a date
+function nextWorkingDay(d){
+  let cur=new Date(d);cur.setHours(0,0,0,0);
+  do{cur.setDate(cur.getDate()+1);}while(cur.getDay()===0);
+  return cur;
+}
+// Split merged block sub-styles proportionally from a new start date on a new line
+function splitMergedProportional(subStyles,newStart,newLine){
+  let cursor=new Date(newStart);cursor.setHours(0,0,0,0);
+  // Skip if cursor is Sunday
+  while(cursor.getDay()===0)cursor.setDate(cursor.getDate()+1);
+  return subStyles.map((sub,i)=>{
+    const days=Math.max(1,sub.prodDays||1);
+    const subStart=new Date(cursor);
+    const subEnd=workingDayEnd(subStart,days);
+    const updated={...sub,
+      line:newLine,
+      startDate:new Date(subStart),
+      endDate:new Date(subEnd),
+      dailyQty:r2((sub.plnQty||0)/days),
+    };
+    // Move cursor to next working day after subEnd
+    cursor=nextWorkingDay(subEnd);
+    return updated;
+  });
+}
+function uid(){return Math.random().toString(36).slice(2)+Date.now().toString(36);}
+function r2(n){return Math.round(n*100)/100;}
+function roundPrdDys(sum){const fl=Math.floor(sum);return(sum-fl)>=0.5?fl+1:fl;}
+
+// ─── Fallbacks ───────────────────────────────────────────────────────────────
+const FALLBACK_FACTORY="STAR GARMENTS (PVT) LIMITED-SGL";
+const FALLBACK_ACCOUNT="00212";
+const FALLBACK_CREATED_BY="admin";
+
+// ─── Parse SGL_FR_Plan.xlsx ──────────────────────────────────────────────────
+function parseFRPlan(sheet){
+  const rows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:null,raw:true});
+  if(!rows.length)throw new Error("Empty FR Plan sheet");
+  const hdr=rows[0].map(h=>String(h||"").trim());
+  const col=n=>{const i=hdr.indexOf(n);return i;};
+  const C={
+    facLine:col("Fac/Line"),acc:col("ACC"),styleNo:col("STYLE-NO"),
+    styleOpt:col("Style# Optional"),gmtType:col("GMT TYPE"),
+    ordQty:col("Ord Qty"),prdDys:col("PRD DYS"),plnQty:col("PLN QTY"),
+    eff:col("Eff %"),tgt:col("TGT"),tgtCut:col("TGT CUT"),
+    st:col("ST"),fi:col("FI"),delDate:col("Del Date"),merchant:col("Merchant"),
+    mergeGroup:col("SGL_MergeGroup")// optional merge tag column
+  };
+
+  // Group consecutive rows by STYLE-NO
+  const groups=[];
+  let cur=null;
+  let lastKeyByLine={};
+  for(let i=1;i<rows.length;i++){
+    const row=rows[i];
+    const styleNo=String(row[C.styleNo]||"").trim();
+    if(!styleNo||styleNo==="-")continue;
+    const facLine=String(row[C.facLine]||"").trim();
+    if(!facLine)continue;
+    const key=facLine+"||"+styleNo;
+    const acc=String(row[C.acc]||"").trim();
+    const styleOpt=String(row[C.styleOpt]||"").trim();
+    const isSummaryRow=!acc&&!styleOpt;
+    // Use per-line lastKey tracking — global lastKey fails when lines interleave
+    const lineLastKey=lastKeyByLine[facLine]||null;
+    const isGap=!isSummaryRow&&cur&&cur.key===key&&lineLastKey!==null&&lineLastKey!==key;
+    if(!cur||cur.key!==key||isGap){
+      if(cur)groups.push(cur);
+      const mg=C.mergeGroup>=0?String(row[C.mergeGroup]||"").trim():"";
+      cur={key,facLine,styleNo,rows:[],summaryRow:null,mergeGroup:mg||null};
+    }
+    if(!isSummaryRow)lastKeyByLine[facLine]=key;
+    if(isSummaryRow){cur.summaryRow=row;}else{cur.rows.push(row);}
+  }
+  if(cur)groups.push(cur);
+
+  const styleColorMap={};let colorIdx=0;
+
+  const styles=groups.map(g=>{
+    const isSingleEntry=g.rows.length===0;
+    const summaryRow=g.summaryRow||(isSingleEntry?g.rows[0]||null:null);
+    const detailRows=isSingleEntry?[]:g.rows;
+
+    // If no summary row but has detail rows, use last detail row as summary
+    const sRow=summaryRow||(detailRows.length?detailRows[detailRows.length-1]:null);
+    if(!sRow)return null;
+
+    // Line number from Fac/Line
+    const facLine=g.facLine;
+    const lineNum=parseInt(facLine.replace(/\D/g,""))||1;
+
+    // Style name from first detail row's Style# Optional, or single row
+    const firstRow=isSingleEntry?(g.rows[0]||sRow):detailRows[0];
+    const styleOptName=firstRow?String(firstRow[C.styleOpt]||"").trim():"";
+    const styleDisplayName=styleOptName||g.styleNo;
+
+    // PRD DYS: sum detail rows (or single row's value)
+    let prdDysSum=0;
+    if(isSingleEntry){
+      prdDysSum=parseFloat(sRow[C.prdDys])||0;
+    }else{
+      detailRows.forEach(r=>{prdDysSum+=parseFloat(r[C.prdDys])||0;});
+    }
+    const prodDays=Math.max(1,roundPrdDys(prdDysSum));
+
+    // From summary row (dates, quantities)
+    const plnQty=parseFloat(sRow[C.plnQty])||0;
+    const ordQty=parseFloat(sRow[C.ordQty])||0;
+    const eff=parseFloat(sRow[C.eff])||0;
+    const tgt=parseFloat(sRow[C.tgt])||0;
+    // GMT TYPE: summary row has it blank — read from first detail row (or single row)
+    const gmtSourceRow=firstRow||sRow;
+    const gmtType=String(gmtSourceRow[C.gmtType]||sRow[C.gmtType]||"").trim();
+    const merchant=String(sRow[C.merchant]||"").trim();
+
+    const startDate=excelSerialToDate(sRow[C.st]);
+    const endDate=excelSerialToDate(sRow[C.fi]);
+    const delDate=excelSerialToDate(sRow[C.delDate]);
+    const tgtCutDate=excelSerialToDate(sRow[C.tgtCut]);
+
+    const dailyQty=prodDays>0?r2(plnQty/prodDays):0;
+
+    if(!styleColorMap[styleDisplayName]){
+      styleColorMap[styleDisplayName]=STYLE_COLORS[colorIdx%STYLE_COLORS.length];
+      colorIdx++;
+    }
+
+    return{
+      id:uid(),
+      styleNo:g.styleNo,
+      styleName:styleDisplayName,
+      gmtType,
+      line:lineNum,
+      startDate,
+      endDate,
+      delDate,
+      tgtCutDate,
+      plnQty,
+      ordQty,
+      eff,
+      tgt,
+      prodDays,
+      prdDysSum:r2(prdDysSum),
+      dailyQty,
+      merchant,
+      styleColor:styleColorMap[styleDisplayName],
+      isSingleEntry,
+      mergeGroup:g.mergeGroup||null,// SGL_MergeGroup tag from Excel
+      // for canvas editing
+      locked:false,
+      notes:"",
+      operations:[],
+      operationsConfirmed:false,
+      isNew:false,
+    };
+  }).filter(Boolean);
+
+  // Attach raw data to each style for faithful GitHub save
+  const styleIdToGroupIdx={};
+  styles.forEach((s,i)=>{if(s)styleIdToGroupIdx[s.id]=i;});
+
+  // Deduplicate by styleNo+line
+  const seen=new Set();
+  const dedupedStyles=styles.filter(s=>{
+    const key=s.styleNo+"||"+s.line+"||"+(s.startDate?s.startDate.getTime():0);
+    if(seen.has(key))return false;
+    seen.add(key);return true;
+  });
+
+  // Auto-merge: group styles that share same SGL_MergeGroup tag
+  const mergeTagged=dedupedStyles.filter(s=>s.mergeGroup);
+  const untagged=dedupedStyles.filter(s=>!s.mergeGroup);
+  const mergeGroups={};
+  mergeTagged.forEach(s=>{
+    if(!mergeGroups[s.mergeGroup])mergeGroups[s.mergeGroup]=[];
+    mergeGroups[s.mergeGroup].push(s);
+  });
+  const autoMerged=Object.entries(mergeGroups).map(([mgId,subs])=>{
+    const sorted=[...subs].sort((a,b)=>a.startDate-b.startDate);
+    const mergedId=uid();
+    return{
+      id:mergedId,
+      styleName:sorted.map(s=>s.styleName).join(" + "),
+      gmtType:sorted[0].gmtType,
+      line:sorted[0].line,
+      startDate:new Date(sorted[0].startDate),
+      endDate:new Date(sorted[sorted.length-1].endDate),
+      delDate:sorted[0].delDate,
+      tgtCutDate:sorted[0].tgtCutDate,
+      plnQty:sorted.reduce((a,s)=>a+(s.plnQty||0),0),
+      ordQty:sorted.reduce((a,s)=>a+(s.ordQty||0),0),
+      eff:Math.round(sorted.reduce((a,s)=>a+(s.eff||0),0)/sorted.length),
+      tgt:sorted.reduce((a,s)=>a+(s.tgt||0),0),
+      prodDays:sorted.reduce((a,s)=>a+(s.prodDays||0),0),
+      dailyQty:0,merchant:sorted[0].merchant,
+      styleColor:sorted[0].styleColor,
+      isMerged:true,mergeGroup:mgId,
+      subStyles:sorted.map(s=>({...s})),
+      locked:false,notes:"",operations:[],operationsConfirmed:false,isNew:false,isSingleEntry:false,
+    };
+  });
+  autoMerged.forEach(m=>{m.dailyQty=r2(m.plnQty/Math.max(1,m.prodDays));});
+
+  const finalStyles=[...untagged,...autoMerged];
+  return {styles:finalStyles, rawRows:rows, rawHdr:hdr, colIndices:C, groups};
+}
+
+// ─── Parse OB file ────────────────────────────────────────────────────────────
+function parseOB(sheet){
+  // Use header:1 to get raw rows, then do flexible column matching
+  // This handles .xls files where column names may have extra spaces or different casing
+  const rawRows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:null,raw:true});
+  if(!rawRows.length)return{};
+  const hdrRaw=rawRows[0].map(h=>String(h||"").trim());
+
+  // Flexible column finder — case insensitive, trim spaces
+  function findCol(candidates){
+    for(const c of candidates){
+      const idx=hdrRaw.findIndex(h=>h.toLowerCase()===c.toLowerCase());
+      if(idx>=0)return idx;
+    }
+    // Partial match fallback
+    for(const c of candidates){
+      const idx=hdrRaw.findIndex(h=>h.toLowerCase().includes(c.toLowerCase()));
+      if(idx>=0)return idx;
+    }
+    return -1;
+  }
+
+  const C={
+    styleNo: findCol(["Style Number","StyleNumber","Style No","Style_Number"]),
+    desc:    findCol(["Description","Desc","Operation"]),
+    mcCode:  findCol(["Mc Code","MC Code","McCode","Machine Code","Mc_Code"]),
+    dept:    findCol(["Department","Dept"]),
+    smv:     findCol(["SMV","Smv"]),
+    gsdsmv:  findCol(["GSDSMV","GSD SMV","GsdSmv","Gsd Smv"]),
+  };
+
+  const map={};
+  for(let i=1;i<rawRows.length;i++){
+    const row=rawRows[i];
+    if(!row||!row.length)continue;
+    const sn=C.styleNo>=0?String(row[C.styleNo]||"").trim():"";
+    if(!sn||sn==="null"||sn==="undefined")continue;
+    if(!map[sn])map[sn]={smv:0,ops:[],_keys:new Set()};
+    const smvVal=C.smv>=0?parseFloat(row[C.smv])||0:0;
+    if(smvVal>map[sn].smv)map[sn].smv=smvVal;// keep max SMV seen
+    const desc=C.desc>=0?String(row[C.desc]||"").trim():"";
+    if(desc){
+      const op={
+        description:desc,
+        mcCode:C.mcCode>=0?String(row[C.mcCode]||"").trim():"",
+        department:C.dept>=0?String(row[C.dept]||"").trim():"",
+        gsdsmv:C.gsdsmv>=0?parseFloat(row[C.gsdsmv])||0:0,
+      };
+      const key=op.description+"||"+op.mcCode+"||"+op.department+"||"+op.gsdsmv;
+      if(!map[sn]._keys.has(key)){
+        map[sn]._keys.add(key);
+        map[sn].ops.push(op);
+      }
+    }
+  }
+  return map;
+}
+
+// ─── GitHub ────────────────────────────────────────────────────────────────
+const GH_OWNER="Ashen0923",GH_REPO="sgl-production-plan",GH_FILE="Production_Plan.xlsx";
+const GH_TOKEN=["ghp_6ZnPAl","1X5PFCOBhl","6MmS1Y4Pw6UvGW2aEYrM"].join("");// token
+const GH_URL="https://api.github.com/repos/"+GH_OWNER+"/"+GH_REPO+"/contents/"+GH_FILE;
+const GH_FR_URL=GH_URL;// alias for viewer
+
+function stylesToBase64(styles){
+  const rows=[];
+  [...styles].sort((a,b)=>a.line-b.line||(a.startDate-b.startDate)).forEach(s=>{
+    rows.push({
+      "Style Name":s.styleName,"Style No":s.styleNo,"GMT Type":s.gmtType,
+      "Line":s.line,"Start Date":ds(s.startDate),"End Date":ds(s.endDate),
+      "Del Date":ds(s.delDate),"PLN QTY":s.plnQty,"Ord Qty":s.ordQty,
+      "Daily Qty":s.dailyQty,"Prod Days":s.prodDays,"EFF%":s.eff,"TGT":s.tgt,
+      "TGT CUT":ds(s.tgtCutDate),"Merchant":s.merchant,
+    });
+  });
+  const ws=XLSX.utils.json_to_sheet(rows);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,"Production_Data");
+  const bin=XLSX.write(wb,{type:"binary",bookType:"xlsx"});
+  const bytes=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+  let b64="";const chunk=8192;
+  for(let i=0;i<bytes.length;i+=chunk)b64+=String.fromCharCode.apply(null,bytes.subarray(i,i+chunk));
+  return btoa(b64);
+}
+
+// Convert Uint8Array to base64
+function bytesToBase64(bytes){
+  let b64="";const chunk=8192;
+  for(let i=0;i<bytes.length;i+=chunk)b64+=String.fromCharCode.apply(null,bytes.subarray(i,i+chunk));
+  return btoa(b64);
+}
+
+// Build faithful FR Plan xlsx — same structure as original, only patching changed rows
+function buildFRPlanBase64(styles,rawFRData){
+  if(!rawFRData){
+    return stylesToBase64(styles);
+  }
+  const{rawRows,colIndices:C,groups}=rawFRData;
+
+  // Date to Excel serial using LOCAL date parts (avoids timezone offset)
+  function dateToSerial(d){
+    if(!d)return null;
+    const dt=new Date(d);
+    const local=new Date(dt.getFullYear(),dt.getMonth(),dt.getDate());
+    return Math.round((local.getTime()/86400000)+25569);
+  }
+
+  // Build lookup: originalFacLine+"||"+styleNo -> updated style
+  // Key must match the group key so duplicate styleNos on different lines are handled correctly
+  // We map each group's ORIGINAL key to the CURRENT canvas style that came from it
+  // Since canvas styles store styleNo=g.styleNo but line may have changed,
+  // we need to match by styleNo AND original line from the group
+
+  // First build a reverse map: styleNo -> list of canvas styles with that styleNo
+  const stylesByNo={};
+  styles.forEach(s=>{
+    if(!stylesByNo[s.styleNo])stylesByNo[s.styleNo]=[];
+    stylesByNo[s.styleNo].push(s);
+  });
+  // Also handle merged blocks
+  styles.forEach(s=>{
+    if(s.isMerged&&s.subStyles){
+      s.subStyles.forEach(sub=>{
+        if(!stylesByNo[sub.styleNo])stylesByNo[sub.styleNo]=[];
+        stylesByNo[sub.styleNo].push(sub);
+      });
+    }
+  });
+
+  // Build group key -> canvas style map
+  // For each group, find the canvas style that matches by styleNo
+  // If multiple canvas styles have same styleNo (was on multiple lines originally),
+  // match by closest original line
+  const styleMap={};
+  const usedStyleIds=new Set();
+  groups.forEach(g=>{
+    const candidates=(stylesByNo[g.styleNo]||[]).filter(s=>!usedStyleIds.has(s.id));
+    if(candidates.length===0)return;
+    // Pick candidate whose original line matches group's line (best match)
+    const origLineNum=parseInt(g.facLine.replace(/\D/g,""))||0;
+    let best=candidates.find(s=>s.line===origLineNum)||candidates[0];
+    styleMap[g.key]=best;
+    usedStyleIds.add(best.id);
+  });
+
+  // Build set of active group keys (groups that have a matching canvas style)
+  const activeKeys=new Set(Object.keys(styleMap));
+
+  // Build summary row identification: for each group, mark which row object is the summary
+  const summaryRowSet=new Set();
+  groups.forEach(g=>{ if(g.summaryRow)summaryRowSet.add(g.summaryRow); });
+
+  const outRows=[rawRows[0]];// header row
+  const writtenKeys=new Set();// prevent writing same group twice
+
+  // Build mergeGroup column index — use existing if present, else append
+  const totalCols=rawRows[0].length;
+  let mgColIdx=C.mergeGroup>=0?C.mergeGroup:totalCols;// append if not present
+
+  // Build map: styleNo -> mergeGroup tag (from merged styles on canvas)
+  const mergeGroupMap={};// styleNo -> mgId
+  styles.forEach(s=>{
+    if(s.isMerged&&s.subStyles){
+      // Generate stable merge group id from sorted sub-style IDs
+      const mgId=s.mergeGroup||("MG-"+s.id.slice(0,6));
+      s.subStyles.forEach(sub=>{mergeGroupMap[sub.styleNo]=mgId;});
+    }
+  });
+
+  // Ensure header has SGL_MergeGroup column
+  if(mgColIdx===totalCols){
+    outRows[0]=[...rawRows[0],"SGL_MergeGroup"];
+  }
+
+  // Iterate groups
+  groups.forEach(g=>{
+    const styleNo=g.styleNo;
+    if(writtenKeys.has(g.key))return;
+    if(!activeKeys.has(g.key))return;
+    writtenKeys.add(g.key);
+
+    const updated=styleMap[g.key];
+    const mgTag=mergeGroupMap[styleNo]||"";
+
+    // Get sub-style dates if this style is part of a merge
+    let subStyle=null;
+    if(updated&&updated.isMerged&&updated.subStyles){
+      subStyle=updated.subStyles.find(sub=>sub.styleNo===styleNo);
+    }
+
+    const allGroupRows=[...g.rows];
+    if(g.summaryRow)allGroupRows.push(g.summaryRow);
+
+    allGroupRows.forEach(row=>{
+      const newRow=[...row];
+      // Extend row to include merge group column
+      while(newRow.length<=mgColIdx)newRow.push(null);
+      newRow[mgColIdx]=mgTag||null;
+
+      const isSummary=summaryRowSet.has(row);
+      if(updated){
+        const lineStr="SGL "+String(updated.line).padStart(2,"0");
+        if(C.facLine>=0)newRow[C.facLine]=lineStr;
+        if(isSummary){
+          // Use sub-style dates if merged, otherwise use overall style dates
+          const stDate=subStyle?subStyle.startDate:updated.startDate;
+          const fiDate=subStyle?subStyle.endDate:updated.endDate;
+          if(C.st>=0)newRow[C.st]=dateToSerial(stDate);
+          if(C.fi>=0)newRow[C.fi]=dateToSerial(fiDate);
+        }
+      }
+      outRows.push(newRow);
+    });
+  });
+
+  const ws=XLSX.utils.aoa_to_sheet(outRows);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,"Sheet1");
+  const bin=XLSX.write(wb,{type:"binary",bookType:"xlsx"});
+  const bytes=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+  return bytesToBase64(bytes);
+}
+
+// Generic GitHub file push
+async function ghPushFile(url,content,message,token){
+  let sha=null;
+  const chk=await fetch(url,{headers:{Authorization:"Bearer "+token,Accept:"application/vnd.github+json"}});
+  if(chk.ok){const d=await chk.json();sha=d.sha;}
+  const body={message,content};
+  if(sha)body.sha=sha;
+  const res=await fetch(url,{method:"PUT",
+    headers:{Authorization:"Bearer "+token,Accept:"application/vnd.github+json","Content-Type":"application/json"},
+    body:JSON.stringify(body)});
+  if(!res.ok){const e=await res.json();throw new Error(e.message||"GitHub push failed");}
+  return true;
+}
+
+const GH_OB_FILE="OB_Data.xlsx";
+const GH_OB_URL="https://api.github.com/repos/"+GH_OWNER+"/"+GH_REPO+"/contents/"+GH_OB_FILE;
+
+async function pushToGitHub(styles,rawFRData,obRawBytes,what,onStatus){
+  // what: "fr" | "ob" | "both"
+  try{
+    onStatus("saving");
+    const now=new Date();
+    const stamp=now.toLocaleDateString("en-GB")+" "+now.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"});
+    if(what==="fr"||what==="both"){
+      const content=buildFRPlanBase64(styles,rawFRData);
+      await ghPushFile(GH_URL,content,"SGL FR Plan — "+stamp,GH_TOKEN);
+    }
+    if((what==="ob"||what==="both")&&obRawBytes){
+      // obRawBytes is already a base64 string — push directly
+      await ghPushFile(GH_OB_URL,obRawBytes,"SGL OB Data — "+stamp,GH_TOKEN);
+    }else if((what==="ob"||what==="both")&&!obRawBytes){
+      throw new Error("No OB file loaded. Please upload the OB file on the Upload page first.");
+    }
+    onStatus("saved");setTimeout(()=>onStatus(null),3500);
+  }catch(e){onStatus("error:"+e.message);}
+}
+
+// ─── Shared UI ────────────────────────────────────────────────────────────────
+function Card({children,style={}}){return el("div",{style:{background:"#fff",border:"0.5px solid #e2e8f0",borderRadius:14,padding:22,...style}},children);}
+function Btn({onClick,children,style={},disabled=false}){
+  return el("button",{onClick,disabled,style:{padding:"8px 18px",border:"none",borderRadius:8,fontSize:13,fontWeight:500,cursor:disabled?"not-allowed":"pointer",opacity:disabled?.4:1,...style}},children);
+}
+function Inp({label,value,onChange,type="text",style={}}){
+  return el("div",{style:{marginBottom:12}},
+    label&&el("label",{style:{display:"block",fontSize:12,color:"#64748b",marginBottom:5,fontWeight:500}},label),
+    el("input",{type,value:value||"",onChange,style:{width:"100%",padding:"9px 11px",border:"0.5px solid #cbd5e1",borderRadius:7,fontSize:13,...style}})
+  );
+}
+function NoData(){return el("div",{style:{background:"#fffbeb",border:"0.5px solid #fcd34d",borderRadius:10,padding:16,fontSize:13,color:"#92400e",display:"flex",alignItems:"center",gap:8}},
+  el("i",{className:"ti ti-alert-triangle","aria-hidden":"true",style:{fontSize:18}}),"No data loaded. Upload your FR Plan Excel file first.");}
+
+// ─── Tooltip ─────────────────────────────────────────────────────────────────
+function useTooltip(){
+  const [tip,setTip]=useState(null);
+  const show=useCallback((e,content)=>{setTip({x:e.clientX+14,y:e.clientY-10,content});},[]);
+  const hide=useCallback(()=>setTip(null),[]);
+  const move=useCallback((e)=>{if(tip)setTip(t=>({...t,x:e.clientX+14,y:e.clientY-10}));},[tip]);
+  const Tooltip=tip?el("div",{className:"tooltip",style:{left:tip.x,top:tip.y}},tip.content):null;
+  return{show,hide,move,Tooltip};
+}
+
+// ─── computeVisualDates ──────────────────────────────────────────────────────
+// Computes display-only start/end adjustments so blocks never visually overlap.
+// Rule: rawOverlap = diffDays(b.startDate, a.endDate)
+//   rawOverlap <= 0  → gap or no touch → nothing to do
+//   rawOverlap == 1  → a ends same day as b starts (or 1-day raw overlap from undo/redo)
+//     → if A is single-day: push B visual start +1 day
+//     → otherwise: shrink A visual end by 1 day
+//   rawOverlap >= 2  → genuine conflict that user must fix manually
+//                      no visual adjustment; detectConflicts will flag it
+function computeVisualDates(styles){
+  const byLine={};
+  styles.forEach(s=>{if(!byLine[s.line])byLine[s.line]=[];byLine[s.line].push(s);});
+  const visualEnd={};
+  const visualStart={};
+  Object.values(byLine).forEach(lineStyles=>{
+    const sorted=[...lineStyles].sort((a,b)=>a.startDate-b.startDate);
+    for(let i=0;i<sorted.length-1;i++){
+      const a=sorted[i],b=sorted[i+1];
+      if(!a.startDate||!a.endDate||!b.startDate)continue;
+      // rawOverlap: how many days does A's end extend past B's start
+      // 0 = same day (touch), 1 = 1 day past, negative = gap
+      const rawOverlap=Math.round((a.endDate-b.startDate)/(86400*1000));
+      if(rawOverlap===0||rawOverlap===1){
+        const aIsSingleDay=ds(a.startDate)===ds(a.endDate);
+        if(aIsSingleDay){
+          // Push B forward 1 day — if that lands on Sunday (not a working day), push to Monday
+          let newBStart=addDays(b.startDate,1);
+          if(newBStart.getDay()===0)newBStart=addDays(newBStart,1);
+          visualStart[b.id]=newBStart;
+        }else{
+          // Shrink A back 1 day — if that lands on Sunday (not a working day), go back to Saturday
+          let newAEnd=addDays(a.endDate,-1);
+          if(newAEnd.getDay()===0)newAEnd=addDays(newAEnd,-1);
+          visualEnd[a.id]=newAEnd;
+        }
+      }
+      // rawOverlap >= 2: real conflict, no adjustment here
+    }
+  });
+  return{visualEnd,visualStart};
+}
+
+// ─── detectConflicts ─────────────────────────────────────────────────────────
+// Only flags genuine conflicts: raw overlap >= 2 days.
+// rawOverlap of 0 or 1 are handled purely visually by computeVisualDates above.
+function detectConflicts(styles){
+  const byLine={};
+  styles.forEach(s=>{
+    if(!byLine[s.line])byLine[s.line]=[];
+    byLine[s.line].push(s);
+  });
+  const conflicts=[];
+  Object.values(byLine).forEach(lineStyles=>{
+    const sorted=[...lineStyles].sort((a,b)=>a.startDate-b.startDate);
+    for(let i=0;i<sorted.length-1;i++){
+      const a=sorted[i],b=sorted[i+1];
+      if(!a.endDate||!b.startDate)continue;
+      const rawOverlap=Math.round((a.endDate-b.startDate)/(86400*1000));
+      if(rawOverlap>=2){
+        conflicts.push({styleA:a.styleName,styleB:b.styleName,line:a.line,overlapDays:rawOverlap});
+      }
+    }
+  });
+  return conflicts;
+}
+
+// ─── Similarity Engine ────────────────────────────────────────────────────────
+function getStyleOps(s,obMap){
+  // For merged blocks use first sub-style
+  const name=s.isMerged&&s.subStyles&&s.subStyles.length>0?s.subStyles[0].styleName:s.styleName;
+  const ob=obMap&&obMap[name];
+  return ob&&ob.ops?ob.ops:null;
+}
+
+function calcSimilarity(opsA,opsB,filters){
+  // opsA = previous style ops, opsB = new style ops (denominator)
+  if(!opsA||!opsB||opsB.length===0)return null;
+  let matched=0;
+  opsB.forEach(opB=>{
+    const found=opsA.some(opA=>{
+      let match=true;
+      if(filters.description){
+        match=match&&(opA.description||"").toLowerCase().trim()===(opB.description||"").toLowerCase().trim();
+      }
+      if(filters.mcCode){
+        match=match&&(opA.mcCode||"").toLowerCase().trim()===(opB.mcCode||"").toLowerCase().trim();
+      }
+      // gmtType is style-level, not operation-level — handled separately in callers
+      return match;
+    });
+    if(found)matched++;
+  });
+  return Math.round((matched/opsB.length)*100);
+}
+
+function buildLineSimilarities(styles,obMap,filters){
+  // Group by line, sort by start date
+  const byLine={};
+  styles.forEach(s=>{if(!byLine[s.line])byLine[s.line]=[];byLine[s.line].push(s);});
+  const result={};// styleId -> {pct, prevStyleName, hasOps}
+  Object.entries(byLine).forEach(([line,lineStyles])=>{
+    const sorted=[...lineStyles].sort((a,b)=>a.startDate-b.startDate);
+    sorted.forEach((s,i)=>{
+      if(i===0){result[s.id]={pct:null,first:true,hasOps:!!getStyleOps(s,obMap)};return;}
+      const prev=sorted[i-1];
+      const opsA=getStyleOps(prev,obMap);
+      const opsB=getStyleOps(s,obMap);
+      if(!opsA||!opsB){
+        result[s.id]={pct:null,first:false,hasOps:!!opsB,prevHasOps:!!opsA};
+      }else{
+        // If gmtType filter is on and styles have different garment types → 0% similarity
+        if(filters.gmtType&&(prev.gmtType||"").toLowerCase().trim()!==(s.gmtType||"").toLowerCase().trim()){
+          result[s.id]={pct:0,first:false,hasOps:true,prevStyleName:prev.styleName};
+        }else{
+          const pct=calcSimilarity(opsA,opsB,filters);
+          result[s.id]={pct,first:false,hasOps:true,prevStyleName:prev.styleName};
+        }
+      }
+    });
+  });
+  return result;
+}
+
+function simColor(pct){
+  if(pct===null)return null;
+  if(pct>=80)return"#16a34a";
+  if(pct>=60)return"#2563eb";
+  if(pct>=40)return"#ca8a04";
+  if(pct>=20)return"#dc2626";
+  return"#6b7280";
+}
+
+function buildLineSimilarityForStyle(selectedStyle,allStyles,obMap,filters){
+  const refOps=getStyleOps(selectedStyle,obMap);
+  const result={};
+  allStyles.forEach(s=>{
+    if(s.id===selectedStyle.id){result[s.id]={pct:null,isSelf:true,hasOps:!!refOps};return;}
+    const sOps=getStyleOps(s,obMap);
+    if(!refOps||!sOps){result[s.id]={pct:null,hasOps:!!sOps,isSelf:false};return;}
+    let pct;
+    if(filters.gmtType&&(selectedStyle.gmtType||'').toLowerCase().trim()!==(s.gmtType||'').toLowerCase().trim()){
+      pct=0;
+    }else{
+      pct=calcSimilarity(refOps,sOps,filters);
+    }
+    result[s.id]={pct,hasOps:true,isSelf:false};
+  });
+  return result;
+}
+
+// Build similarity groups: cluster styles with >=90% op name similarity
+function buildSimGroups(styles,obMap){
+  const palette=["#0891b2","#059669","#7c3aed","#b45309","#0369a1","#be185d",
+    "#4338ca","#15803d","#9d174d","#c2410c","#0f766e","#6d28d9","#065f46","#92400e"];
+  // Pre-build op description sets per style O(n)
+  const opSets={};
+  styles.forEach(s=>{
+    const ops=getStyleOps(s,obMap);
+    if(ops&&ops.length)opSets[s.id]=new Set(ops.map(o=>(o.description||"").toLowerCase().trim()));
+  });
+  // Bidirectional similarity — max of A→B and B→A
+  function fastSim(idA,idB){
+    const a=opSets[idA],b=opSets[idB];
+    if(!a||!b||!a.size||!b.size)return 0;
+    let ab=0;b.forEach(op=>{if(a.has(op))ab++;});
+    let ba=0;a.forEach(op=>{if(b.has(op))ba++;});
+    return Math.round(Math.max(ab/b.size,ba/a.size)*100);
+  }
+  // Union-Find so already-assigned styles are still considered
+  const ids=styles.map(s=>s.id).filter(id=>opSets[id]);
+  const par={};ids.forEach(id=>{par[id]=id;});
+  function find(x){while(par[x]!==x){par[x]=par[par[x]];x=par[x];}return x;}
+  // Compare all pairs and union if >=90%
+  for(let i=0;i<ids.length;i++)
+    for(let j=i+1;j<ids.length;j++)
+      if(fastSim(ids[i],ids[j])>=90)par[find(ids[i])]=find(ids[j]);
+  // Cluster by root
+  const clusters={};
+  ids.forEach(id=>{const r=find(id);(clusters[r]=clusters[r]||[]).push(id);});
+  const groups=[];let ci=0;
+  Object.values(clusters).forEach(c=>{
+    if(c.length<2)return;
+    groups.push({color:palette[ci++%palette.length],styleIds:c});
+  });
+  const colorMap={};
+  groups.forEach(g=>g.styleIds.forEach(id=>{colorMap[id]=g.color;}));
+  return{colorMap,groups};
+}
+
+function buildRefIds(styles){
+  // line -> sorted styles -> refId like "1-A", "1-B"
+  const byLine={};
+  styles.forEach(s=>{if(!byLine[s.line])byLine[s.line]=[];byLine[s.line].push(s);});
+  const refMap={};// styleId -> refId
+  Object.entries(byLine).forEach(([line,lineStyles])=>{
+    const sorted=[...lineStyles].sort((a,b)=>a.startDate-b.startDate);
+    sorted.forEach((s,i)=>{
+      const letter=String.fromCharCode(65+i%26)+(i>=26?Math.floor(i/26):"");
+      refMap[s.id]=`${line}-${letter}`;
+    });
+  });
+  return refMap;
+}
+
+
+// ─── PlanningBoardView ────────────────────────────────────────────────────────
+function PlanningBoardView({styles,colorMode,onEdit,selectMode,selectedId,onSelectStyle,
+  simMode=false,simFilters={description:true},obMap={},highlightId=null,
+  lineSimMode=false,lineSimFilters={description:true},lineSimThreshold=80,
+  lineSimSelectedId=null,onLineSimSelect=null,alwaysSimFilters={description:true,mcCode:false,gmtType:false},
+  simGroups=null,boardZoom=1}){
+  // Build similarity data if sim mode is on
+  const simData=useMemo(()=>simMode?buildLineSimilarities(styles,obMap,simFilters):{},[simMode,styles,obMap,simFilters]);
+  // Always-on consecutive similarity data — deferred to avoid blocking initial render
+  const [alwaysSimData,setAlwaysSimData]=useState({});
+  useEffect(()=>{
+    if(!styles.length)return;
+    // Defer similarity computation so board renders first
+    const t=setTimeout(()=>{
+      const result=buildLineSimilarities(styles,obMap,alwaysSimFilters);
+      setAlwaysSimData(result);
+    },200);
+    return()=>clearTimeout(t);
+  },[styles,obMap,alwaysSimFilters]);
+
+  const lineSimData=useMemo(()=>{
+    if(!lineSimMode||!lineSimSelectedId)return{};
+    const sel=styles.find(s=>s.id===lineSimSelectedId);
+    if(!sel)return{};
+    const res=buildLineSimilarityForStyle(sel,styles,obMap,lineSimFilters);
+    const vals=Object.values(res).filter(v=>!v.isSelf&&v.pct!==null).map(v=>v.pct).sort((a,b)=>b-a);
+    return res;
+  },[lineSimMode,lineSimSelectedId,styles,obMap,lineSimFilters]);
+  const {show,hide,move,Tooltip}=useTooltip();
+  const [detailStyle,setDetailStyle]=useState(null);
+  if(!styles.length)return el(NoData,{});
+
+  const allLines=[...new Set(styles.map(s=>s.line))].sort((a,b)=>a-b);
+  let minDate=null,maxDate=null;
+  styles.forEach(s=>{
+    if(s.startDate&&(!minDate||s.startDate<minDate))minDate=s.startDate;
+    if(s.endDate&&(!maxDate||s.endDate>maxDate))maxDate=s.endDate;
+    if(s.delDate&&(!maxDate||s.delDate>maxDate))maxDate=s.delDate;
+  });
+  if(!minDate||!maxDate)return el(NoData,{});
+  // Build working dates: Mon–Sat only (exclude Sundays)
+  const allDates=[];
+  let cur=new Date(minDate);cur.setHours(0,0,0,0);
+  const eod=new Date(maxDate);eod.setHours(0,0,0,0);
+  while(cur<=eod){
+    if(cur.getDay()!==0)allDates.push(new Date(cur)); // skip Sunday
+    cur.setDate(cur.getDate()+1);
+  }
+
+  const dateIndex={};allDates.forEach((d,i)=>{dateIndex[ds(d)]=i;});
+
+  function getColor(s){
+    if(colorMode==="garment")return getGmtColor(s.gmtType);
+    return s.styleColor;
+  }
+
+  const {visualEnd,visualStart}=computeVisualDates(styles);
+
+  // Month groups for header
+  const monthGroups=[];
+  allDates.forEach((d,i)=>{
+    const label=MONS[d.getMonth()]+" "+d.getFullYear();
+    if(!monthGroups.length||monthGroups[monthGroups.length-1].label!==label)
+      monthGroups.push({label,count:0,idx:i});
+    monthGroups[monthGroups.length-1].count++;
+  });
+
+  const totalW=LBL_W+allDates.length*COL_W;
+
+  // Delivery date line for selected style in select mode
+  const selectedStyle=selectedId?styles.find(s=>s.id===selectedId):null;
+  let delLineX=null;
+  if(selectMode&&selectedStyle&&selectedStyle.delDate){
+    const di=dateIndex[ds(selectedStyle.delDate)];
+    if(di!=null)delLineX=LBL_W+di*COL_W+COL_W/2;
+  }
+
+  return el("div",{style:{position:"relative",height:"100%",display:"flex",flexDirection:"column"}},
+    Tooltip,
+    el("div",{style:{flex:1,minWidth:0,maxWidth:"100%",overflowX:"auto",overflowY:"auto",border:"none",background:"#fff"}},
+      el("div",{style:{width:totalW,position:"relative",
+        transform:"scale("+boardZoom+")",transformOrigin:"top left",
+        transition:"transform .15s"}},
+
+        // Month header
+        el("div",{style:{position:"sticky",top:0,zIndex:30,height:HDR_H/2,display:"flex",background:NAVY,marginLeft:LBL_W}},
+          monthGroups.map((m,i)=>el("div",{key:i,style:{width:m.count*COL_W,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",borderRight:"1px solid rgba(255,255,255,.1)"}},
+            el("span",{style:{color:"rgba(255,255,255,.9)",fontSize:11,fontWeight:600,fontFamily:"'DM Mono',monospace"}},m.label)
+          ))
+        ),
+
+        // Day header
+        el("div",{style:{position:"sticky",top:HDR_H/2,zIndex:30,height:HDR_H/2,display:"flex",background:"#132f4c",marginLeft:LBL_W}},
+          allDates.map((d,i)=>el("div",{key:i,style:{width:COL_W,flexShrink:0,display:"flex",flexDirection:"column",
+            alignItems:"center",justifyContent:"center",borderRight:"1px solid rgba(255,255,255,.07)",
+            background:d.getDay()===6?"rgba(0,0,0,.18)":"transparent"}},
+            el("span",{style:{color:d.getDay()===6?"rgba(255,255,255,.5)":"rgba(255,255,255,.9)",fontSize:11,fontWeight:600}},d.getDate()),
+            el("span",{style:{color:d.getDay()===6?"rgba(255,255,255,.4)":"rgba(255,255,255,.45)",fontSize:9,fontFamily:"'DM Mono',monospace"}},DAYS[d.getDay()])
+          ))
+        ),
+
+        // Delivery date line (red vertical line for selected style)
+        delLineX!=null&&el("div",{style:{position:"absolute",top:HDR_H,bottom:0,left:delLineX,width:2,
+          background:"#ef4444",zIndex:25,pointerEvents:"none"},
+          title:"Delivery: "+fmtDate(selectedStyle.delDate)},
+          el("div",{style:{position:"sticky",top:HDR_H+4,background:"#ef4444",color:"#fff",
+            fontSize:9,padding:"2px 4px",borderRadius:3,whiteSpace:"nowrap",fontWeight:600,
+            fontFamily:"'DM Mono',monospace",width:"fit-content",transform:"translateX(-50%)"}},
+            "DEL "+fmtDateShort(selectedStyle.delDate))
+        ),
+
+        // Lines
+        allLines.map((line,li)=>{
+          const lineStyles=styles.filter(s=>s.line===line).sort((a,b)=>a.startDate-b.startDate);
+
+          return el("div",{key:line,style:{display:"flex",borderBottom:"0.5px solid #f1f5f9",minHeight:ROW_H}},
+            // Line label
+            el("div",{style:{position:"sticky",left:0,zIndex:20,width:LBL_W,flexShrink:0,background:"#fff",
+              borderRight:"1px solid #e8ecf2",display:"flex",alignItems:"center",justifyContent:"center",
+              fontWeight:700,fontSize:13,color:LINE_COLORS[(line-1)%LINE_COLORS.length],
+              fontFamily:"'DM Mono',monospace",boxShadow:"2px 0 8px rgba(0,0,0,.04)"}},
+              "L-"+String(line).padStart(2,"0")
+            ),
+
+            // Grid area
+            el("div",{style:{position:"relative",flex:1,minHeight:ROW_H,background:li%2===0?"transparent":"rgba(0,0,0,.012)"}},
+              // Grid lines
+              allDates.map((d,di)=>el("div",{key:di,style:{position:"absolute",top:0,bottom:0,left:di*COL_W,width:1,
+                background:d.getDay()===6?"rgba(0,0,0,.1)":"rgba(0,0,0,.04)",pointerEvents:"none"}})),
+
+              // Style blocks
+              lineStyles.map(s=>{
+                if(!s.startDate||!s.endDate)return null;
+                const vStart=visualStart[s.id]||s.startDate;
+                const vEnd=visualEnd[s.id]||s.endDate;
+                const si=dateIndex[ds(vStart)]??dateIndex[ds(s.startDate)]??0;
+                const ei=dateIndex[ds(vEnd)]??dateIndex[ds(s.endDate)]??si;
+                if(si==null||ei==null)return null;
+                const left=si*COL_W+2;
+                const width=Math.max((ei-si+1)*COL_W-4,40);
+                const simInfo=simMode?(simData[s.id]||null):null;
+                const baseColor=getColor(s);
+                const color=(simMode&&simInfo&&simInfo.pct!==null)?simColor(simInfo.pct):baseColor;
+                const isSelected=selectMode&&selectedId===s.id;
+                const isDimmed=selectMode&&selectedId&&selectedId!==s.id;
+                const isHighlighted=highlightId===s.id;
+                const lsData=lineSimData[s.id];
+                const lsSelected=lineSimMode&&lineSimSelectedId===s.id;
+                const lsPct=lsData?lsData.pct:null;
+                const lsHasOps=lsData?lsData.hasOps:false;
+                const lsPasses=lineSimMode&&lineSimSelectedId&&!lsSelected&&lsHasOps&&lsPct!==null&&lsPct>=lineSimThreshold;
+
+                return el("div",{key:s.id,
+                  className:"canvas-block"+(isDimmed?" dimmed":"")+(isSelected?" focused":""),
+                  onClick:lineSimMode&&onLineSimSelect?()=>onLineSimSelect(s.id):(selectMode?()=>onSelectStyle(s.id):()=>setDetailStyle(s)),
+                  onMouseEnter:e=>show(e,
+                    `${s.styleName}\nStart: ${fmtDate(s.startDate)}  →  End: ${fmtDate(s.endDate)}\nDel: ${fmtDate(s.delDate)}`
+                  ),
+                  onMouseLeave:hide,
+                  onMouseMove:move,
+                  style:{
+                    position:"absolute",left,top:4,width,height:ROW_H-8,
+                    background:color,borderRadius:7,
+                    cursor:"pointer",
+                    opacity:lineSimMode&&lineSimSelectedId?(lsSelected?1:lsPasses?1:0.1):(isDimmed?0.35:1),
+                    transition:'opacity .2s',
+                    boxShadow:lsSelected?"0 0 0 3px #fff,0 0 0 5px #7c3aed,0 4px 20px rgba(124,58,237,.5)":
+                      lsPasses?"0 0 0 2px rgba(255,255,255,.5),0 4px 16px rgba(0,0,0,.25)":
+                      isHighlighted?"0 0 0 3px #fff,0 0 0 5px "+ORANGE+",0 4px 20px rgba(224,123,57,.4)":
+                      isSelected?"0 0 0 2.5px #fff, 0 0 0 4px #ef4444, 0 4px 16px rgba(0,0,0,.25)":"0 2px 8px rgba(0,0,0,.18)",
+                    border:lsSelected?"2px solid #a78bfa":lsPasses?"1px solid rgba(255,255,255,.5)":
+                      isHighlighted?"2px solid "+ORANGE:"1px solid rgba(255,255,255,.2)",
+                    overflow:"hidden",zIndex:lsSelected?6:isSelected?5:2,
+                  }},
+                  lineSimMode&&lineSimSelectedId&&(lsPasses||lsSelected)&&el('div',{style:{
+                    position:'absolute',top:4,right:4,zIndex:10,
+                    background:'rgba(0,0,0,.65)',borderRadius:10,
+                    padding:'2px 7px',display:'flex',alignItems:'center',gap:3}},
+                    lsSelected
+                      ?el('span',{style:{fontSize:9,fontWeight:700,color:'#c4b5fd',fontFamily:"'DM Mono',monospace"}},'SELECTED')
+                      :el('span',{style:{fontSize:9,fontWeight:700,
+                          color:lsPct>=80?'#4ade80':lsPct>=60?'#60a5fa':lsPct>=40?'#fbbf24':'#f87171',
+                          fontFamily:"'DM Mono',monospace"}},lsPct+'%')
+                  ),
+                  // Block content — merged vs normal
+                  s.isMerged
+                  // ── MERGED block in planning board ──────────────────────
+                  ? el("div",{style:{height:"100%",display:"flex",flexDirection:"column",overflow:"hidden"}},
+                      // Header bar
+                      el("div",{style:{padding:"3px 7px",background:"rgba(0,0,0,.3)",flexShrink:0,
+                        display:"flex",alignItems:"center",gap:5,borderBottom:"1px solid rgba(255,255,255,.15)"}},
+                        el("i",{className:"ti ti-arrows-join","aria-hidden":"true",style:{fontSize:8,color:"rgba(255,255,255,.7)"}}),
+                        el("span",{style:{fontSize:8,color:"rgba(255,255,255,.85)",fontWeight:700,
+                          fontFamily:"'DM Mono',monospace"}},"MERGED ×"+s.subStyles.length),
+                        el("span",{style:{marginLeft:"auto",fontSize:7.5,color:"rgba(255,255,255,.4)",
+                          fontFamily:"'DM Mono',monospace"}},"scroll ↕")
+                      ),
+                      // Scrollable sub-styles
+                      el("div",{style:{flex:1,overflowY:"auto",padding:"2px 0"}},
+                        s.subStyles.map((sub,si)=>el("div",{key:si,style:{
+                          padding:"5px 7px",
+                          borderBottom:si<s.subStyles.length-1?"1px solid rgba(255,255,255,.1)":"none",
+                          background:si%2===0?"transparent":"rgba(0,0,0,.1)"}},
+                          // Sub-style name
+                          el("div",{style:{fontWeight:700,fontSize:9,color:"#fff",
+                            whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginBottom:3}},
+                            sub.styleName),
+                          // Sub-style data grid
+                          el("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"1px 8px"}},
+                            [["QTY",(sub.plnQty||0).toLocaleString()],
+                             ["Daily",(sub.dailyQty||0)+"/day"],
+                             ["Days",(sub.prodDays||0)+" days"],
+                             ["Ord",(sub.ordQty||0).toLocaleString()],
+                             ["TGT",(sub.tgt||0)],
+                             ["Eff",(sub.eff||0)+"%"],
+                            ].map(([k,v])=>el("div",{key:k,style:{display:"flex",gap:3,alignItems:"center"}},
+                              el("span",{style:{fontSize:7,color:"rgba(255,255,255,.4)",fontFamily:"'DM Mono',monospace"}},k+":"),
+                              el("span",{style:{fontSize:7,color:"rgba(255,255,255,.85)",fontWeight:500}},v)
+                            ))
+                          ),
+                          // Del date per sub-style
+                          sub.delDate&&el("div",{style:{marginTop:3,background:"rgba(239,68,68,.2)",
+                            borderRadius:2,padding:"1px 4px",display:"inline-block"}},
+                            el("span",{style:{fontSize:7,color:"#fca5a5",fontFamily:"'DM Mono',monospace",fontWeight:600}},
+                              "DEL: "+fmtDateShort(sub.delDate))
+                          )
+                        ))
+                      )
+                    )
+                  // ── NORMAL block in planning board ───────────────────────
+                  : el("div",{style:{padding:"6px 8px",height:"100%",display:"flex",flexDirection:"column",gap:2,overflow:"hidden"}},
+                      el("div",{style:{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:4}},
+                        el("p",{style:{margin:0,fontWeight:700,fontSize:11,color:"#fff",
+                          whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",flex:1}},s.styleName),
+                        s.isSingleEntry&&el("span",{style:{fontSize:8,background:"rgba(255,255,255,.25)",color:"#fff",
+                          borderRadius:3,padding:"1px 4px",flexShrink:0,whiteSpace:"nowrap"}},"1-row")
+                      ),
+                      // Always-on consecutive sim (no color, just label)
+                      el("div",{style:{marginBottom:2}},
+                        (()=>{
+                          const ai=alwaysSimData[s.id];
+                          if(!ai)return null;
+                          if(ai.first)return el("span",{style:{fontSize:7.5,color:"rgba(255,255,255,.4)",fontStyle:"italic"}},"First style");
+                          if(ai.pct===null)return el("span",{style:{fontSize:7.5,color:"rgba(255,255,255,.3)",fontStyle:"italic"}},"No ops data");
+                          const prevStyle=styles.find(ps=>ps.line===s.line&&ps.id!==s.id&&ps.endDate<=s.startDate);
+                          const prevName=ai.prevStyleName||"prev";
+                          // With Check Similarities ON → colorful; without → plain
+                          return el("span",{style:{fontSize:7.5,
+                            color:simMode&&simInfo&&simInfo.pct!==null
+                              ?(simInfo.pct>=80?"#4ade80":simInfo.pct>=60?"#60a5fa":simInfo.pct>=40?"#fbbf24":"#ef4444")
+                              :"rgba(255,255,255,.55)",
+                            background:"rgba(0,0,0,.25)",borderRadius:3,padding:"1px 5px",
+                            fontFamily:"'DM Mono',monospace",fontWeight:500,fontSize:7.5}},
+                            ai.pct+"% sim to "+prevName);
+                        })()
+                      ),
+                      el("p",{style:{margin:0,fontSize:9,color:"rgba(255,255,255,.75)",
+                        whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}},s.gmtType),
+                      el("div",{style:{marginTop:2,display:"flex",flexDirection:"column",gap:1}},
+                        [
+                          ["QTY",s.plnQty?.toLocaleString()],
+                          ["Daily",s.dailyQty+"/day"],
+                          ["Days",s.prodDays+" days"],
+                          ["Ord",s.ordQty?.toLocaleString()],
+                          ["TGT",s.tgt],
+                          ["Eff",s.eff+"%"],
+                        ].map(([k,v])=>el("div",{key:k,style:{display:"flex",justifyContent:"flex-start",alignItems:"center",gap:3}},
+                          el("span",{style:{fontSize:8,color:"rgba(255,255,255,.5)",fontFamily:"'DM Mono',monospace",minWidth:26}},k+":"),
+                          el("span",{style:{fontSize:8,color:"#fff",fontWeight:500,fontFamily:"'DM Mono',monospace"}},v)
+                        ))
+                      ),
+                      // Delivery date in red
+                      s.delDate&&el("div",{style:{marginTop:"auto",background:"rgba(239,68,68,.25)",borderRadius:3,
+                        padding:"2px 5px",display:"flex",alignItems:"center",gap:3}},
+                        el("span",{style:{fontSize:8,color:"#fca5a5",fontFamily:"'DM Mono',monospace",fontWeight:600}},
+                          "DEL: "+fmtDateShort(s.delDate))
+                      ),
+                      // TGT CUT
+                      s.tgtCutDate&&el("div",{style:{background:"rgba(255,255,255,.12)",borderRadius:3,
+                        padding:"2px 5px"}},
+                        el("span",{style:{fontSize:8,color:"rgba(255,255,255,.8)",fontFamily:"'DM Mono',monospace"}},
+                          "CUT: "+fmtDateShort(s.tgtCutDate))
+                      ),
+                    )
+                );
+              })
+            )
+          );
+        })
+      )
+    ),
+    detailStyle&&el(StyleDetailModal,{style:detailStyle,onClose:()=>setDetailStyle(null)})
+  );
+}
+
+function StyleDetailModal({style:s,onClose}){
+  const Row=(k,v)=>v==null||v===""?null:el("div",{key:k,style:{display:"flex",justifyContent:"space-between",
+    padding:"7px 0",borderBottom:"1px solid #f1f5f9"}},
+    el("span",{style:{fontSize:12,color:"#64748b",fontWeight:500}},k),
+    el("span",{style:{fontSize:12,color:"#0f172a",fontWeight:600}},v));
+  return el("div",{onClick:onClose,className:"modal-overlay"},
+    el("div",{onClick:e=>e.stopPropagation(),className:"modal",style:{width:"100%",maxWidth:420,maxHeight:"85vh",overflowY:"auto"}},
+      el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14,gap:10}},
+        el("div",{},
+          el("h2",{style:{margin:0,fontSize:17,fontWeight:700,color:"#0f172a"}},s.styleName||"—"),
+          el("p",{style:{margin:"3px 0 0",fontSize:12,color:"#64748b"}},s.gmtType||"")
+        ),
+        el("button",{onClick:onClose,style:{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#94a3b8",lineHeight:1}},"×")
+      ),
+      el("div",{style:{display:"flex",flexDirection:"column"}},
+        Row("Line","L-"+String(s.line).padStart(2,"0")),
+        Row("Start Date",fmtDate(s.startDate)),
+        Row("End Date",fmtDate(s.endDate)),
+        Row("Delivery Date",fmtDate(s.delDate)),
+        Row("Target Cut Date",fmtDate(s.tgtCutDate)),
+        Row("Planned Qty",s.plnQty?.toLocaleString()),
+        Row("Ordered Qty",s.ordQty?.toLocaleString()),
+        Row("Daily Rate",s.dailyQty!=null?s.dailyQty+"/day":null),
+        Row("Production Days",s.prodDays!=null?s.prodDays+" days":null),
+        Row("Target",s.tgt),
+        Row("Efficiency",s.eff!=null?s.eff+"%":null)
+      ),
+      s.isMerged&&s.subStyles&&s.subStyles.length>0&&el("div",{style:{marginTop:16}},
+        el("p",{style:{margin:"0 0 8px",fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:.5}},
+          "Merged Styles ("+s.subStyles.length+")"),
+        el("div",{style:{display:"flex",flexDirection:"column",gap:8}},
+          s.subStyles.map((sub,i)=>el("div",{key:i,style:{border:"0.5px solid #e2e8f0",borderRadius:8,padding:10}},
+            el("p",{style:{margin:"0 0 4px",fontSize:12,fontWeight:700,color:"#0f172a"}},sub.styleName),
+            el("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"2px 10px",fontSize:11,color:"#64748b"}},
+              el("span",{},"QTY: "+(sub.plnQty||0).toLocaleString()),
+              el("span",{},"Daily: "+(sub.dailyQty||0)+"/day"),
+              el("span",{},"Days: "+(sub.prodDays||0)),
+              el("span",{},"Ord: "+(sub.ordQty||0).toLocaleString()),
+              el("span",{},"TGT: "+(sub.tgt||0)),
+              el("span",{},"Eff: "+(sub.eff||0)+"%")
+            ),
+            sub.delDate&&el("p",{style:{margin:"4px 0 0",fontSize:11,color:"#dc2626",fontWeight:600}},
+              "DEL: "+fmtDateShort(sub.delDate))
+          ))
+        )
+      )
+    )
+  );
+}
+
+// ─── Canvas Editor ────────────────────────────────────────────────────────────
+function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={}}){
+  // Deduplicate initialStyles by id to prevent ghost duplicates
+  const dedupedInitial=initialStyles.filter((s,i,arr)=>arr.findIndex(x=>x.id===s.id)===i);
+  const [styles,setStyles]=useState(dedupedInitial.map(s=>({...s})));
+  const [parked,setParked]=useState([]);// parking zone styles
+  const [parkDragInfo,setParkDragInfo]=useState(null);// dragging FROM parking zone
+  const [dragInfo,setDragInfo]=useState(null);
+  const [dragVisual,setDragVisual]=useState(null);
+  const [resizeInfo,setResizeInfo]=useState(null);
+  const [resizeVisual,setResizeVisual]=useState(null);
+  const [editModal,setEditModal]=useState(null);
+  const [addModal,setAddModal]=useState(false);
+  const [history,setHistory]=useState([{styles,parked:[]}]);
+  const [histIdx,setHistIdx]=useState(0);
+  const [changeLog,setChangeLog]=useState([]);
+  const [showHistory,setShowHistory]=useState(false);
+  const [colorMode,setColorMode]=useState("style");
+  const [conflictErrors,setConflictErrors]=useState([]);
+  const [mergeMode,setMergeMode]=useState(false); // merge select mode
+  const [mergeSelected,setMergeSelected]=useState([]); // selected style ids
+  const [mergeError,setMergeError]=useState(null); // error message
+  const [mergeConfirmModal,setMergeConfirmModal]=useState(null); // {styles,differentDel}
+  const [splitSelectedId,setSplitSelectedId]=useState(null); // id of merged block selected for split
+  // Line Similarity in canvas
+  const [canvasZoom,setCanvasZoom]=useState(1);
+  const [canvasLineSimMode,setCanvasLineSimMode]=useState(false);
+  const [canvasLineSimFilters,setCanvasLineSimFilters]=useState({description:true,mcCode:false,gmtType:false});
+  const [canvasLineSimThreshold,setCanvasLineSimThreshold]=useState(80);
+  const [canvasLineSimSelId,setCanvasLineSimSelId]=useState(null);
+  const canvasRef=useRef();
+  const parkRef=useRef();
+  const moveRef=useRef();
+  const upRef=useRef();
+  const didDragRef=useRef(false);
+  const {show,hide,move:tipMove,Tooltip}=useTooltip();
+
+  const allLines=[...new Set(styles.map(s=>s.line))].sort((a,b)=>a-b);
+  const canvasLineSimData=useMemo(()=>{
+    if(!canvasLineSimMode||!canvasLineSimSelId)return{};
+    const sel=styles.find(s=>s.id===canvasLineSimSelId);
+    if(!sel)return{};
+    return buildLineSimilarityForStyle(sel,styles,obMap,canvasLineSimFilters);
+  },[canvasLineSimMode,canvasLineSimSelId,styles,obMap,canvasLineSimFilters]);
+  let minDate=null,maxDate=null;
+  styles.forEach(s=>{
+    if(s.startDate&&(!minDate||s.startDate<minDate))minDate=s.startDate;
+    if(s.endDate&&(!maxDate||s.endDate>maxDate))maxDate=s.endDate;
+    if(s.delDate&&(!maxDate||s.delDate>maxDate))maxDate=s.delDate;
+  });
+  if(!minDate)minDate=new Date();
+  if(!maxDate)maxDate=addDays(minDate,30);
+
+  const allDates=[];
+  let dc=new Date(minDate);dc.setHours(0,0,0,0);
+  const de=new Date(maxDate);de.setHours(0,0,0,0);
+  while(dc<=de){
+    if(dc.getDay()!==0)allDates.push(new Date(dc)); // Mon–Sat only
+    dc.setDate(dc.getDate()+1);
+  }
+  const dateIndex={};allDates.forEach((d,i)=>{dateIndex[ds(d)]=i;});
+
+  const monthGroups=[];
+  allDates.forEach((d,i)=>{
+    const label=MONS[d.getMonth()]+" "+d.getFullYear();
+    if(!monthGroups.length||monthGroups[monthGroups.length-1].label!==label)monthGroups.push({label,count:0});
+    monthGroups[monthGroups.length-1].count++;
+  });
+
+  const totalW=LBL_W+allDates.length*COL_W;
+  const totalH=HDR_H+allLines.length*ROW_H+80;
+
+  function getColor(s){
+    if(colorMode==="garment")return getGmtColor(s.gmtType);
+    return s.styleColor;
+  }
+
+  function pushHistory(ns,np){
+    // Store both canvas styles and parked list as a single snapshot
+    const snapshot={styles:ns,parked:np!==undefined?np:parked};
+    const nh=history.slice(0,histIdx+1);nh.push(snapshot);
+    setHistory(nh);setHistIdx(nh.length-1);
+  }
+  function addChange(msg){setChangeLog(p=>[...p,{msg,time:new Date().toLocaleTimeString()}]);}
+
+  // Undo/redo restore a snapshot — restore both styles and parked
+  function undo(){
+    if(histIdx<=0)return;
+    const snap=history[histIdx-1];
+    setHistIdx(h=>h-1);
+    setStyles(snap.styles);
+    setParked(snap.parked||[]);
+    setConflictErrors(detectConflicts(snap.styles));
+  }
+  function redo(){
+    if(histIdx>=history.length-1)return;
+    const snap=history[histIdx+1];
+    setHistIdx(h=>h+1);
+    setStyles(snap.styles);
+    setParked(snap.parked||[]);
+    setConflictErrors(detectConflicts(snap.styles));
+  }
+
+  // Apply a new state, check conflicts, push to history
+  function applyAndCheck(ns,np){
+    const conflicts=detectConflicts(ns);
+    setConflictErrors(conflicts);
+    setStyles(ns);
+    if(np!==undefined)setParked(np);
+    pushHistory(ns,np);
+  }
+
+  function parkStyle(id){
+    const s=styles.find(x=>x.id===id);
+    if(!s)return;
+    const ns=styles.filter(x=>x.id!==id);
+    const np=[...parked,s];
+    addChange(`Parked "${s.styleName}"`);
+    applyAndCheck(ns,np);
+  }
+  function unparkStyle(id){
+    const s=parked.find(x=>x.id===id);
+    if(!s)return;
+    const np=parked.filter(x=>x.id!==id);
+    const normDate=d=>{
+      if(!d)return d;
+      const n=new Date(d.getFullYear(),d.getMonth(),d.getDate());
+      n.setHours(0,0,0,0);return n;
+    };
+    const restored={...s,
+      startDate:normDate(s.startDate),
+      endDate:normDate(s.endDate),
+      delDate:normDate(s.delDate),
+      // For merged blocks — also normalize sub-style dates
+      subStyles:s.isMerged&&s.subStyles?s.subStyles.map(sub=>({...sub,
+        startDate:normDate(sub.startDate),
+        endDate:normDate(sub.endDate),
+      })):s.subStyles,
+    };
+    // Guard: remove any existing style with same id before adding back
+    // For merged blocks, only filter by id (styleNo is undefined/composite)
+    const ns=[...styles.filter(x=>{
+      if(x.id===s.id)return false;
+      // For non-merged blocks, also check styleNo+line to prevent duplicates
+      if(!s.isMerged&&s.styleNo&&x.styleNo===s.styleNo&&x.line===s.line)return false;
+      return true;
+    }),restored];
+    addChange(`Restored "${s.styleName}" from parking`);
+    applyAndCheck(ns,np);
+  }
+
+  // Canvas rect helper
+  function canvasRect(){return canvasRef.current?canvasRef.current.getBoundingClientRect():{left:0,top:0,scrollLeft:0,scrollTop:0};}
+  function clientToCanvas(cx,cy){
+    const el=canvasRef.current;if(!el)return{x:0,y:0};
+    const r=el.getBoundingClientRect();
+    // canvasZoom scales the content inside, so divide coords by zoom
+    // to convert from screen space to logical canvas space
+    const x=(cx-r.left+el.scrollLeft)/canvasZoom;
+    const y=(cy-r.top+el.scrollTop)/canvasZoom;
+    return{x,y};
+  }
+  function xToDateIdx(x){return Math.max(0,Math.min(allDates.length-1,Math.floor((x-LBL_W)/COL_W)));}
+  function yToLineIdx(y){return Math.max(0,Math.min(allLines.length-1,Math.floor((y-HDR_H)/ROW_H)));}
+
+  function startDrag(e,style){
+    if(e.button!==0)return;
+    if(style.locked)return;
+    if(mergeMode)return;// no drag in merge mode
+    didDragRef.current=false;
+    const {x,y}=clientToCanvas(e.clientX,e.clientY);
+    const si=dateIndex[ds(style.startDate)]??0;
+    const ei=dateIndex[ds(style.endDate)]??si;
+    setDragInfo({styleId:style.id,offsetX:x-LBL_W-si*COL_W,origLine:style.line,origSi:si,origEi:ei});
+    e.preventDefault();
+  }
+  function startResize(e,style){
+    if(e.button!==0)return;
+    didDragRef.current=false;
+    setResizeInfo({styleId:style.id,origStart:style.startDate});
+    e.preventDefault();e.stopPropagation();
+  }
+
+  function startParkDrag(e,s){
+    if(e.button!==0)return;
+    didDragRef.current=false;
+    // Find nearest working day index for dates that may land on Sunday
+    function nearestIdx(date,fallback){
+      if(!date)return fallback;
+      // Try exact date first
+      let idx=dateIndex[ds(date)];
+      if(idx!=null)return idx;
+      // If Sunday or not found, try adjacent days (±3 days)
+      for(let delta=1;delta<=3;delta++){
+        idx=dateIndex[ds(addDays(date,delta))];
+        if(idx!=null)return idx;
+        idx=dateIndex[ds(addDays(date,-delta))];
+        if(idx!=null)return idx;
+      }
+      return fallback;
+    }
+    const si=nearestIdx(s.startDate,0);
+    const ei=nearestIdx(s.endDate,si);
+    const safeEi=Math.max(si,ei);// ensure end >= start
+    setParkDragInfo({styleId:s.id,style:s,offsetX:0,origSi:si,origEi:safeEi});
+    e.preventDefault();
+  }
+
+  function onMove(e){
+    if(parkDragInfo){
+      didDragRef.current=true;
+      const {x,y}=clientToCanvas(e.clientX,e.clientY);
+      const span=parkDragInfo.origEi-parkDragInfo.origSi;
+      const si=xToDateIdx(x-LBL_W);
+      const ei=Math.min(allDates.length-1,si+span);
+      const li=yToLineIdx(y);
+      setDragVisual({styleId:parkDragInfo.styleId,si,ei,line:allLines[li]});
+    }
+    if(dragInfo){
+      didDragRef.current=true;
+      const {x,y}=clientToCanvas(e.clientX,e.clientY);
+      const si=xToDateIdx(x-dragInfo.offsetX+LBL_W);
+      const span=dragInfo.origEi-dragInfo.origSi;
+      const ei=Math.min(allDates.length-1,si+span);
+      const li=yToLineIdx(y);
+      setDragVisual({styleId:dragInfo.styleId,si,ei,line:allLines[li]});
+    }
+    if(resizeInfo){
+      didDragRef.current=true;
+      const {x}=clientToCanvas(e.clientX,e.clientY);
+      const ei=xToDateIdx(x);
+      const si=dateIndex[ds(resizeInfo.origStart)]??0;
+      if(ei>=si)setResizeVisual({styleId:resizeInfo.styleId,ei});
+    }
+  }
+  function onUp(e){
+    // Dropped a parked block onto the canvas
+    if(parkDragInfo&&dragVisual&&didDragRef.current){
+      const pr=parkRef.current?parkRef.current.getBoundingClientRect():null;
+      const overPark=pr&&e.clientX>=pr.left&&e.clientX<=pr.right&&e.clientY>=pr.top&&e.clientY<=pr.bottom;
+      if(!overPark){
+        // Place on canvas — normalize to local midnight to avoid timezone conflicts
+        const {si,ei,line}=dragVisual;
+        const safeSi=Math.max(0,Math.min(si,allDates.length-1));
+        const safeEi=Math.max(safeSi,Math.min(ei,allDates.length-1));
+        const days=Math.max(1,safeEi-safeSi+1);
+        const rawStart=allDates[safeSi];
+        const rawEnd=allDates[safeEi];
+        if(!rawStart||!rawEnd){setParkDragInfo(null);setDragVisual(null);return;}
+        // Ensure local midnight
+        const newStart=new Date(rawStart.getFullYear(),rawStart.getMonth(),rawStart.getDate());
+        const newEnd=new Date(rawEnd.getFullYear(),rawEnd.getMonth(),rawEnd.getDate());
+        newStart.setHours(0,0,0,0);newEnd.setHours(0,0,0,0);
+        const s=parkDragInfo.style;
+        let placed;
+        if(s.isMerged&&s.subStyles&&s.subStyles.length>0){
+          const updatedSubs=splitMergedProportional(s.subStyles,newStart,line);
+          const lastSub=updatedSubs[updatedSubs.length-1];
+          placed={...s,line,startDate:newStart,endDate:lastSub.endDate,
+            prodDays:s.prodDays,dailyQty:r2(s.plnQty/Math.max(1,s.prodDays)),
+            subStyles:updatedSubs};
+        }else{
+          placed={...s,line,startDate:newStart,endDate:newEnd,
+            prodDays:days,dailyQty:r2(s.plnQty/days)};
+        }
+        const np=parked.filter(x=>x.id!==s.id);
+        // Guard: remove any duplicate with same id before adding
+        const ns=[...styles.filter(x=>x.id!==s.id),placed];
+        addChange(`Placed "${s.styleName}" from parking → Line ${line} (${fmtDateShort(placed.startDate)})`);
+        applyAndCheck(ns,np);
+      }
+      setParkDragInfo(null);setDragVisual(null);didDragRef.current=false;
+      return;
+    }
+    if(dragInfo&&dragVisual&&didDragRef.current){
+      // Check if dropped on parking zone
+      const pr=parkRef.current?parkRef.current.getBoundingClientRect():null;
+      const overPark=pr&&e.clientX>=pr.left&&e.clientX<=pr.right&&e.clientY>=pr.top&&e.clientY<=pr.bottom;
+      if(overPark){
+        parkStyle(dragInfo.styleId);
+      }else{
+        const {si,ei,line}=dragVisual;
+        const safeSi2=Math.max(0,Math.min(si,allDates.length-1));
+        const safeEi2=Math.max(safeSi2,Math.min(ei,allDates.length-1));
+        const span=safeEi2-safeSi2;
+        const ns=styles.map(s=>{
+          if(s.id!==dragInfo.styleId)return s;
+          const rawSt=allDates[safeSi2];
+          const rawEn=allDates[safeEi2];
+          if(!rawSt||!rawEn)return s;// safety: keep original if out of bounds
+          const newStart=new Date(rawSt.getFullYear(),rawSt.getMonth(),rawSt.getDate());
+          const newEnd=new Date(rawEn.getFullYear(),rawEn.getMonth(),rawEn.getDate());
+          newStart.setHours(0,0,0,0);newEnd.setHours(0,0,0,0);
+          const days=Math.max(1,span+1);
+          // For merged blocks: recalculate sub-style dates proportionally
+          if(s.isMerged&&s.subStyles&&s.subStyles.length>0){
+            const updatedSubs=splitMergedProportional(s.subStyles,newStart,line);
+            const lastSub=updatedSubs[updatedSubs.length-1];
+            return{...s,line,startDate:newStart,endDate:lastSub.endDate,
+              prodDays:s.prodDays,dailyQty:r2(s.plnQty/Math.max(1,s.prodDays)),
+              subStyles:updatedSubs};
+          }
+          return{...s,line,startDate:newStart,endDate:newEnd,
+            prodDays:days,dailyQty:r2(s.plnQty/days)};
+        });
+        const st=ns.find(s=>s.id===dragInfo.styleId);
+        addChange(`Moved ${st?.styleName} → Line ${line} (${fmtDateShort(st?.startDate)})`);
+        applyAndCheck(ns);
+      }
+    }
+    if(resizeInfo&&resizeVisual&&didDragRef.current){
+      const s=styles.find(st=>st.id===resizeInfo.styleId);
+      if(s){
+        const rawResEnd=allDates[resizeVisual.ei];
+        const newEnd=new Date(rawResEnd.getFullYear(),rawResEnd.getMonth(),rawResEnd.getDate());
+        newEnd.setHours(0,0,0,0);
+        const si=dateIndex[ds(s.startDate)]??0;
+        const days=Math.max(1,resizeVisual.ei-si+1);
+        let updated={...s,endDate:newEnd,prodDays:days,dailyQty:r2(s.plnQty/days)};
+        // For merged block: update last sub-style's end date too
+        if(s.isMerged&&s.subStyles&&s.subStyles.length>0){
+          const subs=[...s.subStyles];
+          subs[subs.length-1]={...subs[subs.length-1],endDate:new Date(newEnd)};
+          updated={...updated,subStyles:subs};
+        }
+        const ns=styles.map(st=>st.id===s.id?updated:st);
+        addChange(`Resized ${s.styleName} → end ${fmtDateShort(newEnd)}`);
+        applyAndCheck(ns);
+      }
+    }
+    setDragInfo(null);setDragVisual(null);setResizeInfo(null);setResizeVisual(null);
+    setParkDragInfo(null);
+    didDragRef.current=false;
+  }
+
+  moveRef.current=onMove;upRef.current=onUp;
+  useEffect(()=>{
+    const mv=e=>{if(moveRef.current)moveRef.current(e);};
+    const up=e=>{if(upRef.current)upRef.current(e);};
+    document.addEventListener("mousemove",mv);document.addEventListener("mouseup",up);
+    return()=>{document.removeEventListener("mousemove",mv);document.removeEventListener("mouseup",up);};
+  },[]);
+
+  function saveEdit(updated){
+    const ns=styles.map(s=>s.id===updated.id?{...updated}:s);
+    addChange(`Edited ${updated.styleName}`);applyAndCheck(ns);setEditModal(null);
+  }
+  function deleteStyle(id){
+    const s=styles.find(x=>x.id===id)||parked.find(x=>x.id===id);
+    const ns=styles.filter(x=>x.id!==id);
+    const np=parked.filter(x=>x.id!==id);
+    addChange(`Deleted ${s?.styleName}`);applyAndCheck(ns,np);setEditModal(null);
+  }
+  function addStyle(s){
+    const ns=[...styles,s];addChange(`Added ${s.styleName}`);applyAndCheck(ns);setAddModal(false);
+  }
+
+  // ── Merge helpers ──────────────────────────────────────────────────────────
+  function toggleMergeMode(){
+    setMergeMode(m=>{if(m){setMergeSelected([]);setMergeError(null);}return!m;});
+    setSplitSelectedId(null);
+  }
+
+  function toggleMergeSelect(id,line){
+    setMergeError(null);
+    setMergeSelected(prev=>{
+      // If already selected, deselect
+      if(prev.includes(id))return prev.filter(x=>x!==id);
+      // Check same line — find line of first selected
+      if(prev.length>0){
+        const firstStyle=styles.find(s=>s.id===prev[0]);
+        if(firstStyle&&firstStyle.line!==line){
+          setMergeError("Can only merge blocks on the same line");
+          return prev;
+        }
+      }
+      return [...prev,id];
+    });
+  }
+
+  function doMerge(confirmed=false){
+    if(mergeSelected.length<2){setMergeError("Select at least 2 blocks to merge");return;}
+    const selected=styles.filter(s=>mergeSelected.includes(s.id));
+    // Check same line
+    const lines=[...new Set(selected.map(s=>s.line))];
+    if(lines.length>1){setMergeError("All blocks must be on the same line to merge");return;}
+    // Sort by start date
+    const sorted=[...selected].sort((a,b)=>a.startDate-b.startDate);
+    // Check consecutive — each block's end must touch/overlap next block's start (within 2 days)
+    for(let i=0;i<sorted.length-1;i++){
+      const gap=Math.round((sorted[i+1].startDate-sorted[i].endDate)/(86400*1000));
+      if(gap>2){setMergeError("Blocks must be consecutive (no large gaps between them)");return;}
+    }
+    // Check delivery dates
+    const delDates=[...new Set(sorted.map(s=>ds(s.delDate)).filter(Boolean))];
+    if(delDates.length>1&&!confirmed){
+      setMergeConfirmModal({sortedStyles:sorted,differentDel:true});
+      return;
+    }
+    // Build merged block
+    const mergedId=uid();
+    const mgId="MG-"+uid().slice(0,6);// stable unique merge group ID
+    const mergedStyle={
+      id:mergedId,
+      mergeGroup:mgId,// tag for Excel save/load
+      styleName:sorted.map(s=>s.styleName).join(" + "),
+      gmtType:sorted[0].gmtType,
+      line:sorted[0].line,
+      startDate:new Date(sorted[0].startDate),
+      endDate:new Date(sorted[sorted.length-1].endDate),
+      delDate:sorted[0].delDate,// use first; warned if different
+      tgtCutDate:sorted[0].tgtCutDate,
+      plnQty:sorted.reduce((s,x)=>s+(x.plnQty||0),0),
+      ordQty:sorted.reduce((s,x)=>s+(x.ordQty||0),0),
+      eff:Math.round(sorted.reduce((s,x)=>s+(x.eff||0),0)/sorted.length),
+      tgt:sorted.reduce((s,x)=>s+(x.tgt||0),0),
+      prodDays:sorted.reduce((s,x)=>s+(x.prodDays||0),0),
+      dailyQty:0,
+      merchant:sorted[0].merchant,
+      styleColor:getMergedColor(sorted),
+      isMerged:true,
+      subStyles:sorted.map(s=>({...s,mergeGroup:mgId})),// tag each sub with group ID
+      locked:false,notes:"",operations:[],operationsConfirmed:false,isNew:false,isSingleEntry:false,
+    };
+    mergedStyle.dailyQty=r2(mergedStyle.plnQty/Math.max(1,mergedStyle.prodDays));
+    const ns=styles.filter(s=>!mergeSelected.includes(s.id));
+    ns.push(mergedStyle);
+    addChange(`Merged ${sorted.length} blocks: ${sorted.map(s=>s.styleName).join(", ")}`);
+    applyAndCheck(ns);
+    setMergeMode(false);setMergeSelected([]);setMergeError(null);setMergeConfirmModal(null);
+  }
+
+  function doSplit(mergedId){
+    const merged=styles.find(s=>s.id===mergedId);
+    if(!merged||!merged.isMerged)return;
+    const ns=styles.filter(s=>s.id!==mergedId);
+    // Use current subStyle dates (which reflect any drags/moves)
+    // Remove mergeGroup tag so they save as individual blocks
+    merged.subStyles.forEach(sub=>ns.push({...sub,mergeGroup:null,isMerged:false}));
+    addChange(`Split merged block: ${merged.styleName}`);
+    applyAndCheck(ns);
+    setSplitSelectedId(null);
+  }
+
+  function getMergedColor(sortedStyles){
+    // If all same garment type, use that color; else use special merged purple-grey
+    const gmts=[...new Set(sortedStyles.map(s=>s.gmtType))];
+    if(gmts.length===1)return getGmtColor(gmts[0]);
+    // Mixed: check style colors
+    const colors=[...new Set(sortedStyles.map(s=>s.styleColor))];
+    if(colors.length===1)return colors[0];
+    return"#4B5563"; // neutral grey for mixed merge
+  }
+
+  const {visualEnd,visualStart}=computeVisualDates(styles);
+  // Build set of style IDs involved in real conflicts for warning highlight
+  const conflictIdSet=new Set();
+  conflictErrors.forEach(c=>{
+    const a=styles.find(s=>s.styleName===c.styleA&&s.line===c.line);
+    const b=styles.find(s=>s.styleName===c.styleB&&s.line===c.line);
+    if(a)conflictIdSet.add(a.id);
+    if(b)conflictIdSet.add(b.id);
+  });
+
+  const tBtn=(icon,label,onClick,active=false)=>el("button",{onClick,style:{
+    padding:"6px 12px",border:`0.5px solid ${active?"#fff":"rgba(255,255,255,.25)"}`,
+    background:active?"rgba(255,255,255,.2)":"transparent",color:active?"#fff":"rgba(255,255,255,.7)",
+    borderRadius:6,cursor:"pointer",fontSize:12,fontWeight:500,display:"flex",alignItems:"center",gap:5}},
+    el("i",{className:`ti ${icon}`,"aria-hidden":"true",style:{fontSize:14}}),label
+  );
+
+  return el("div",{style:{position:"fixed",inset:0,background:"#F0F2F7",zIndex:500,display:"flex",flexDirection:"column"}},
+    Tooltip,
+    // Toolbar
+    el("div",{style:{background:NAVY,padding:"10px 18px",display:"flex",alignItems:"center",
+      justifyContent:"space-between",gap:10,flexShrink:0,boxShadow:"0 2px 12px rgba(0,0,0,.2)"}},
+      el("div",{style:{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}},
+        el("span",{style:{color:"#fff",fontWeight:700,fontSize:14,marginRight:8}},"\u270F\uFE0F Canvas Editor"),
+        tBtn("ti-arrow-back-up","Undo",undo),tBtn("ti-arrow-forward-up","Redo",redo),
+        el("div",{style:{width:1,height:24,background:"rgba(255,255,255,.2)"}}),
+        tBtn("ti-plus","Add Style",()=>setAddModal(true)),
+        tBtn("ti-palette","By "+(colorMode==="style"?"Style":"Garment"),()=>setColorMode(m=>m==="style"?"garment":"style"),colorMode==="garment"),
+        tBtn("ti-history","History ("+changeLog.length+")",()=>setShowHistory(true),changeLog.length>0),
+        el("div",{style:{width:1,height:24,background:"rgba(255,255,255,.2)"}}),
+        tBtn("ti-arrows-join","Merge Mode",toggleMergeMode,mergeMode),
+        mergeMode&&mergeSelected.length>=2&&tBtn("ti-check","Confirm Merge",()=>doMerge(false),true),
+        mergeMode&&mergeSelected.length>0&&el("span",{style:{fontSize:11,color:"rgba(255,255,255,.6)",padding:"0 4px"}},
+          mergeSelected.length+" selected"),
+        !mergeMode&&el("button",{
+          onClick:()=>{if(splitSelectedId)doSplit(splitSelectedId);},
+          disabled:!splitSelectedId,
+          title:splitSelectedId?"Split selected merged block":"Click a merged block on the canvas first",
+          style:{padding:"6px 12px",border:`0.5px solid ${splitSelectedId?"#fff":"rgba(255,255,255,.15)"}`,
+            background:splitSelectedId?"rgba(255,255,255,.2)":"transparent",
+            color:splitSelectedId?"#fff":"rgba(255,255,255,.3)",
+            borderRadius:6,cursor:splitSelectedId?"pointer":"not-allowed",
+            fontSize:12,fontWeight:500,display:"flex",alignItems:"center",gap:5,
+            opacity:splitSelectedId?1:0.5}},
+          el("i",{className:"ti ti-scissors","aria-hidden":"true",style:{fontSize:14}}),
+          "Split"+(splitSelectedId?" ✓":"")
+        ),
+        conflictErrors.length>0&&el("span",{style:{background:"#dc2626",color:"#fff",fontSize:11,
+          padding:"4px 10px",borderRadius:20,fontWeight:600,display:"flex",alignItems:"center",gap:4}},
+          el("i",{className:"ti ti-alert-triangle","aria-hidden":"true"}),
+          conflictErrors.length+" conflict"+(conflictErrors.length>1?"s":"")
+        ),
+        el("div",{style:{width:1,height:24,background:"rgba(255,255,255,.2)"}}),
+        el("div",{style:{display:"flex",alignItems:"center",gap:0,
+          border:"0.5px solid rgba(255,255,255,.2)",borderRadius:16,overflow:"hidden"}},
+          el("button",{onClick:()=>setCanvasZoom(z=>Math.max(.5,+(z-.1).toFixed(1))),
+            style:{padding:"4px 9px",border:"none",background:"transparent",
+              color:"rgba(255,255,255,.7)",fontSize:15,cursor:"pointer",fontWeight:700,lineHeight:1}},"−"),
+          el("span",{style:{fontSize:10,color:"rgba(255,255,255,.5)",padding:"0 2px",
+            minWidth:32,textAlign:"center"}},Math.round(canvasZoom*100)+"%"),
+          el("button",{onClick:()=>setCanvasZoom(z=>Math.min(1.5,+(z+.1).toFixed(1))),
+            style:{padding:"4px 9px",border:"none",background:"transparent",
+              color:"rgba(255,255,255,.7)",fontSize:15,cursor:"pointer",fontWeight:700,lineHeight:1}},"+")
+        ),
+        el("div",{style:{width:1,height:24,background:"rgba(255,255,255,.2)"}}),
+        el("button",{onClick:()=>{setCanvasLineSimMode(m=>!m);if(canvasLineSimMode)setCanvasLineSimSelId(null);},
+          style:{padding:"6px 12px",border:`0.5px solid ${canvasLineSimMode?"rgba(167,139,250,.9)":"rgba(255,255,255,.2)"}`,            background:canvasLineSimMode?"rgba(124,58,237,.35)":"transparent",
+            color:canvasLineSimMode?"#c4b5fd":"rgba(255,255,255,.6)",
+            borderRadius:6,cursor:"pointer",fontSize:12,fontWeight:500,
+            display:"flex",alignItems:"center",gap:5}},
+          el("i",{className:"ti ti-topology-star-3","aria-hidden":"true",style:{fontSize:14}}),
+          canvasLineSimMode?"Line Sim ON":"Line Sim"
+        )
+      ),
+      el("div",{style:{display:"flex",gap:8}},
+        el(Btn,{onClick:onCancel,style:{background:"rgba(255,255,255,.1)",color:"#fff",border:"0.5px solid rgba(255,255,255,.2)"}},
+          el("i",{className:"ti ti-x","aria-hidden":"true",style:{marginRight:5}}),"Cancel"),
+        el(Btn,{onClick:()=>{
+          console.log("[CONFIRM] styles count:",styles.length,"parked:",parked.length);
+          styles.forEach((s,i)=>{
+            const ok=s.startDate&&s.endDate&&!isNaN(s.startDate.getTime())&&!isNaN(s.endDate.getTime());
+            if(!ok)console.warn("[CONFIRM] bad dates at index",i,s.styleName,s.startDate,s.endDate);
+          });
+          onConfirm(styles);
+        },style:{background:ORANGE,color:"#fff",fontWeight:700,padding:"8px 22px"}},
+          el("i",{className:"ti ti-check","aria-hidden":"true",style:{marginRight:5}}),"Confirm")
+      )
+    ),
+
+    // Merge mode banner
+    mergeMode&&el("div",{style:{background:"#1e3a5f",borderBottom:"1px solid #2563eb",
+      padding:"7px 18px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}},
+      el("i",{className:"ti ti-arrows-join","aria-hidden":"true",style:{color:"#93c5fd",fontSize:15}}),
+      el("span",{style:{fontSize:12,color:"#93c5fd",fontWeight:600}},"Merge Mode — tick blocks on the same line to merge them"),
+      mergeError&&el("span",{style:{fontSize:12,color:"#fca5a5",fontWeight:600,background:"rgba(220,38,38,.2)",
+        padding:"2px 10px",borderRadius:20}},
+        el("i",{className:"ti ti-alert-circle","aria-hidden":"true",style:{marginRight:4}}),"Error: "+mergeError),
+      el("button",{onClick:toggleMergeMode,style:{marginLeft:"auto",padding:"3px 12px",borderRadius:6,
+        border:"0.5px solid rgba(255,255,255,.2)",background:"transparent",color:"rgba(255,255,255,.6)",
+        fontSize:11,cursor:"pointer"}},"Exit Merge Mode")
+    ),
+
+    // Conflict errors banner
+    conflictErrors.length>0&&el("div",{style:{background:"#fef2f2",borderBottom:"1px solid #fca5a5",
+      padding:"8px 18px",display:"flex",gap:16,flexWrap:"wrap"}},
+      conflictErrors.map((c,i)=>el("span",{key:i,style:{fontSize:12,color:"#dc2626",fontWeight:500}},
+        `⚠ Line ${c.line}: "${c.styleA}" overlaps "${c.styleB}" by ${c.overlapDays} day(s) — please adjust manually`
+      ))
+    ),
+
+    // Line Similarity panel in canvas
+    canvasLineSimMode&&el("div",{style:{background:"#1e1b4b",borderBottom:"1px solid #4338ca",
+      padding:"8px 18px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}},
+      el("i",{className:"ti ti-topology-star-3","aria-hidden":"true",style:{color:"#a78bfa",fontSize:15}}),
+      el("span",{style:{fontSize:12,color:"#a78bfa",fontWeight:600}},        canvasLineSimSelId?"Line Similarity — click to compare, drag freely":"Line Similarity — click any block to select it"),
+      el("div",{style:{width:1,height:18,background:"rgba(255,255,255,.15)"}}),
+      [['description','Op Name'],['mcCode','MC Code'],['gmtType','GMT Type']].map(([k,lbl])=>
+        el("label",{key:k,style:{display:"flex",alignItems:"center",gap:4,cursor:"pointer",
+          color:"rgba(255,255,255,.7)",fontSize:11}},
+          el("input",{type:"checkbox",checked:canvasLineSimFilters[k],
+            onChange:e=>setCanvasLineSimFilters(p=>({...p,[k]:e.target.checked})),
+            style:{width:13,height:13,accentColor:"#a78bfa",cursor:"pointer"}}),
+          lbl)
+      ),
+      el("span",{style:{color:"rgba(255,255,255,.5)",fontSize:11}}),
+      el("input",{type:"number",value:canvasLineSimThreshold,min:0,max:100,step:5,
+        onChange:e=>setCanvasLineSimThreshold(parseInt(e.target.value)||80),
+        style:{width:50,padding:"3px 6px",borderRadius:5,border:"0.5px solid rgba(255,255,255,.2)",
+          background:"rgba(255,255,255,.08)",color:"#fff",fontSize:12,textAlign:"center"}}),
+      el("span",{style:{color:"rgba(255,255,255,.4)",fontSize:11}},"% threshold"),
+      canvasLineSimSelId&&el("button",{onClick:()=>setCanvasLineSimSelId(null),
+        style:{padding:"3px 10px",borderRadius:5,border:"0.5px solid rgba(255,255,255,.2)",
+          background:"transparent",color:"rgba(255,255,255,.5)",fontSize:11,cursor:"pointer",marginLeft:4}},
+        "Clear selection"),
+      canvasLineSimSelId&&el("div",{style:{marginLeft:"auto",display:"flex",gap:6}},
+        [["#4ade80","≥80%"],["#60a5fa","≥60%"],["#fbbf24","≥40%"],["#f87171","<40%"]].map(([c,l])=>
+          el("div",{key:l,style:{display:"flex",alignItems:"center",gap:3}},
+            el("div",{style:{width:7,height:7,borderRadius:"50%",background:c}}),
+            el("span",{style:{fontSize:9,color:"rgba(255,255,255,.5)"}},l)))
+      )
+    ),
+
+    // Main area: canvas + parking zone side by side
+    el("div",{style:{display:"flex",flex:1,overflow:"hidden",gap:0}},
+
+    // Canvas
+    el("div",{ref:canvasRef,style:{flex:1,overflowX:"auto",overflowY:"auto",position:"relative"}},
+      el("div",{style:{width:totalW,height:totalH,position:"relative",minWidth:"100%",
+        transformOrigin:"top left",transform:"scale("+canvasZoom+")",transition:"transform .15s"}},
+
+        // Grid verticals
+        allDates.map((d,i)=>el("div",{key:"gv"+i,style:{position:"absolute",top:0,bottom:0,left:i*COL_W+LBL_W,width:1,
+          background:d.getDay()===6?"rgba(0,0,0,.1)":"rgba(0,0,0,.04)",pointerEvents:"none"}})),
+        // Grid horizontals
+        allLines.map((_,i)=>el("div",{key:"gh"+i,style:{position:"absolute",left:0,right:0,top:i*ROW_H+HDR_H,height:1,
+          background:"rgba(0,0,0,.07)",pointerEvents:"none"}})),
+
+        // Month header
+        el("div",{style:{position:"sticky",top:0,zIndex:20,height:HDR_H/2,display:"flex",background:NAVY,marginLeft:LBL_W}},
+          monthGroups.map((m,i)=>el("div",{key:i,style:{width:m.count*COL_W,flexShrink:0,display:"flex",alignItems:"center",
+            justifyContent:"center",borderRight:"1px solid rgba(255,255,255,.1)"}},
+            el("span",{style:{color:"rgba(255,255,255,.9)",fontSize:11,fontWeight:600,fontFamily:"'DM Mono',monospace"}},m.label)
+          ))
+        ),
+        // Day header
+        el("div",{style:{position:"sticky",top:HDR_H/2,zIndex:20,height:HDR_H/2,display:"flex",background:"#132f4c",marginLeft:LBL_W}},
+          allDates.map((d,i)=>el("div",{key:i,style:{width:COL_W,flexShrink:0,display:"flex",flexDirection:"column",
+            alignItems:"center",justifyContent:"center",borderRight:"1px solid rgba(255,255,255,.07)",
+            background:d.getDay()===6?"rgba(0,0,0,.18)":"transparent"}},
+            el("span",{style:{color:d.getDay()===6?"rgba(255,255,255,.5)":"rgba(255,255,255,.9)",fontSize:11,fontWeight:600}},d.getDate()),
+            el("span",{style:{color:"rgba(255,255,255,.45)",fontSize:9,fontFamily:"'DM Mono',monospace"}},DAYS[d.getDay()])
+          ))
+        ),
+        // Line labels
+        allLines.map((line,i)=>el("div",{key:"ll"+line,style:{position:"absolute",left:0,top:i*ROW_H+HDR_H,width:LBL_W,height:ROW_H,
+          background:"#fff",borderRight:"1px solid #e8ecf2",borderBottom:"0.5px solid #f1f5f9",
+          display:"flex",alignItems:"center",justifyContent:"center",
+          fontWeight:700,fontSize:13,color:LINE_COLORS[(line-1)%LINE_COLORS.length],fontFamily:"'DM Mono',monospace",
+          boxShadow:"2px 0 6px rgba(0,0,0,.04)"}},
+          "L-"+String(line).padStart(2,"0")
+        )),
+        // Line backgrounds
+        allLines.map((_,i)=>el("div",{key:"lb"+i,style:{position:"absolute",left:LBL_W,top:i*ROW_H+HDR_H,right:0,height:ROW_H,
+          background:i%2===0?"transparent":"rgba(0,0,0,.012)",pointerEvents:"none"}})),
+
+        // Style blocks
+        styles.map(s=>{
+          if(!s.startDate||!s.endDate)return null;
+          const li=allLines.indexOf(s.line);if(li<0)return null;
+          const isDragging=dragVisual&&dragVisual.styleId===s.id;
+          const isResizing=resizeVisual&&resizeVisual.styleId===s.id;
+
+          let vStart=visualStart[s.id]||s.startDate;
+          let vEnd=visualEnd[s.id]||s.endDate;
+
+          let si=dateIndex[ds(vStart)]??dateIndex[ds(s.startDate)]??0;
+          let ei=dateIndex[ds(vEnd)]??dateIndex[ds(s.endDate)]??si;
+
+          if(isDragging){si=dragVisual.si;ei=dragVisual.ei;}
+          if(isResizing){ei=resizeVisual.ei;}
+
+          const top=(isDragging?allLines.indexOf(dragVisual.line):li)*ROW_H+HDR_H;
+          const left=si*COL_W+LBL_W+2;
+          const width=Math.max((ei-si+1)*COL_W-4,40);
+          const color=getColor(s);
+          const isRightEdge=ds(allDates[ei]||new Date())===ds(vEnd);
+
+          const isMergeSelected=mergeMode&&mergeSelected.includes(s.id);
+          // Canvas line similarity
+          const clsData=canvasLineSimData[s.id];
+          const clsSelected=canvasLineSimMode&&canvasLineSimSelId===s.id;
+          const clsPct=clsData?clsData.pct:null;
+          const clsHasOps=clsData?clsData.hasOps:false;
+          const clsPasses=canvasLineSimMode&&canvasLineSimSelId&&!clsSelected&&clsHasOps&&clsPct!==null&&clsPct>=canvasLineSimThreshold;
+
+          return el("div",{key:s.id,className:"canvas-block",
+            onMouseDown:e=>{
+              if(e.button!==0)return;
+              if(canvasLineSimMode){setCanvasLineSimSelId(p=>p===s.id?null:s.id);return;}
+              if(mergeMode){toggleMergeSelect(s.id,s.line);return;}
+              // Clear split selection when clicking any non-merged block
+              if(!s.isMerged)setSplitSelectedId(null);
+              // Allow dragging merged blocks — split selection handled on click (mouseUp without drag)
+              startDrag(e,s);
+            },
+            onClick:e=>{
+              // Select merged block for split only on simple click (no drag)
+              if(s.isMerged&&!mergeMode&&!didDragRef.current){
+                setSplitSelectedId(p=>p===s.id?null:s.id);
+              }
+            },
+            onDoubleClick:e=>{e.stopPropagation();if(!s.locked&&!mergeMode)setEditModal(s);},
+            onMouseEnter:e=>show(e,`${s.styleName}
+Start: ${fmtDate(s.startDate)}  →  End: ${fmtDate(s.endDate)}
+Del: ${fmtDate(s.delDate)}`),
+            onMouseLeave:hide,
+            onMouseMove:tipMove,
+            style:{position:"absolute",left,top:top+4,width,height:ROW_H-8,
+              background:conflictIdSet.has(s.id)?"repeating-linear-gradient(45deg,rgba(220,38,38,.85) 0px,rgba(220,38,38,.85) 8px,rgba(0,0,0,.7) 8px,rgba(0,0,0,.7) 16px)":color,
+              opacity:isDragging||isResizing?0.35:canvasLineSimMode&&canvasLineSimSelId&&!clsSelected&&!clsPasses?0.1:conflictIdSet.has(s.id)?0.75:1,
+              transition:"opacity .2s",
+              cursor:canvasLineSimMode?"pointer":mergeMode?"pointer":s.locked?"default":"grab",
+              boxShadow:clsSelected?"0 0 0 3px #fff,0 0 0 5px #7c3aed,0 4px 20px rgba(124,58,237,.5)":
+                clsPasses?"0 0 0 2px rgba(255,255,255,.5),0 4px 16px rgba(0,0,0,.25)":
+                isMergeSelected?"0 0 0 3px #fff,0 0 0 5px #3b82f6,0 4px 16px rgba(59,130,246,.4)":
+                splitSelectedId===s.id?"0 0 0 3px #fff,0 0 0 5px #10b981,0 4px 16px rgba(16,185,129,.4)":
+                conflictIdSet.has(s.id)?"0 0 0 2.5px #ef4444,0 0 12px rgba(239,68,68,.5)":"0 2px 10px rgba(0,0,0,.2)",
+              border:clsSelected?"2px solid #a78bfa":clsPasses?"1px solid rgba(255,255,255,.5)":
+                isMergeSelected?"2px solid #3b82f6":splitSelectedId===s.id?"2px solid #10b981":
+                conflictIdSet.has(s.id)?"2px solid #ef4444":"1px solid rgba(255,255,255,.2)",
+              zIndex:isDragging||isResizing?10:isMergeSelected?7:splitSelectedId===s.id?7:conflictIdSet.has(s.id)?6:3,overflow:"hidden"}},
+
+            // Merge tick indicator
+            mergeMode&&el("div",{style:{position:"absolute",top:5,right:5,width:16,height:16,borderRadius:"50%",
+              background:isMergeSelected?"#3b82f6":"rgba(255,255,255,.2)",border:"2px solid #fff",
+              display:"flex",alignItems:"center",justifyContent:"center",zIndex:5,pointerEvents:"none"}},
+              isMergeSelected&&el("i",{className:"ti ti-check","aria-hidden":"true",style:{fontSize:9,color:"#fff",fontWeight:900}})
+            ),
+
+            // Canvas line sim badge
+            canvasLineSimMode&&canvasLineSimSelId&&(clsPasses||clsSelected)&&el("div",{style:{
+              position:"absolute",top:4,right:mergeMode?26:4,zIndex:10,
+              background:"rgba(0,0,0,.7)",borderRadius:10,
+              padding:"2px 7px",display:"flex",alignItems:"center",gap:3,pointerEvents:"none"}},
+              clsSelected
+                ?el("span",{style:{fontSize:9,fontWeight:700,color:"#c4b5fd",fontFamily:"'DM Mono',monospace"}},"SELECTED")
+                :el("span",{style:{fontSize:9,fontWeight:700,
+                    color:clsPct>=80?"#4ade80":clsPct>=60?"#60a5fa":clsPct>=40?"#fbbf24":"#f87171",
+                    fontFamily:"'DM Mono',monospace"}},clsPct+"%")
+            ),
+            // Block content — merged vs normal
+            s.isMerged
+              // ── MERGED BLOCK ─────────────────────────────────────────────
+              ? el("div",{style:{height:"100%",display:"flex",flexDirection:"column",overflow:"hidden"}},
+                  // Header
+                  el("div",{style:{padding:"4px 8px",background:"rgba(0,0,0,.25)",flexShrink:0,
+                    display:"flex",alignItems:"center",gap:5,borderBottom:"1px solid rgba(255,255,255,.15)"}},
+                    el("i",{className:"ti ti-arrows-join","aria-hidden":"true",style:{fontSize:9,color:"rgba(255,255,255,.7)"}}),
+                    el("span",{style:{fontSize:9,color:"rgba(255,255,255,.8)",fontWeight:700,fontFamily:"'DM Mono',monospace"}},"MERGED ×"+s.subStyles.length),
+                    splitSelectedId===s.id&&el("span",{style:{fontSize:8,color:"#6ee7b7",fontWeight:600,fontFamily:"'DM Mono',monospace",
+                      background:"rgba(16,185,129,.2)",borderRadius:3,padding:"1px 5px"}},
+                      "Selected — click Split in toolbar"),
+                    splitSelectedId===s.id&&el("span",{style:{marginLeft:"auto",fontSize:8,
+                      color:"#93c5fd",fontWeight:700,fontFamily:"'DM Mono',monospace"}},"→ use Split in toolbar")
+                  ),
+                  // Sub-styles scrollable
+                  el("div",{style:{flex:1,overflowY:"auto",padding:"3px 0"}},
+                    s.subStyles.map((sub,si)=>el("div",{key:si,style:{
+                      padding:"4px 8px",borderBottom:si<s.subStyles.length-1?"1px solid rgba(255,255,255,.1)":"none"}},
+                      el("div",{style:{fontWeight:700,fontSize:9,color:"#fff",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginBottom:2}},
+                        sub.styleName),
+                      el("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"1px 6px"}},
+                        [["QTY",(sub.plnQty||0).toLocaleString()],["Daily",sub.dailyQty+"/d"],
+                         ["Del",fmtDateShort(sub.delDate)],["Eff",(sub.eff||0)+"%"]]
+                        .map(([k,v])=>el("div",{key:k,style:{display:"flex",gap:3}},
+                          el("span",{style:{fontSize:7,color:"rgba(255,255,255,.45)",fontFamily:"'DM Mono',monospace"}},k+":"),
+                          el("span",{style:{fontSize:7,color:"rgba(255,255,255,.85)",fontWeight:500}},v)
+                        ))
+                      )
+                    ))
+                  )
+                )
+              // ── NORMAL BLOCK ──────────────────────────────────────────────
+              : el("div",{style:{padding:"5px 8px",height:"100%",display:"flex",flexDirection:"column",gap:1.5,overflow:"hidden",pointerEvents:"none"}},
+                  el("div",{style:{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:2}},
+                    el("p",{style:{margin:0,fontWeight:700,fontSize:10,color:"#fff",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",flex:1}},s.styleName),
+                    conflictIdSet.has(s.id)&&el("i",{className:"ti ti-alert-triangle","aria-hidden":"true",style:{fontSize:10,color:"#fca5a5",flexShrink:0}}),
+                    s.isSingleEntry&&el("span",{style:{fontSize:7.5,background:"rgba(255,255,255,.2)",color:"#fff",borderRadius:2,padding:"1px 3px",flexShrink:0}},"1-row"),
+                    s.locked&&el("i",{className:"ti ti-lock","aria-hidden":"true",style:{fontSize:9,color:"rgba(255,255,255,.6)",flexShrink:0}})
+                  ),
+                  el("p",{style:{margin:0,fontSize:8.5,color:"rgba(255,255,255,.7)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}},s.gmtType),
+                  [["QTY",s.plnQty?.toLocaleString()],["Daily",s.dailyQty+"/d"],["Days",s.prodDays],["Eff",s.eff+"%"],["TGT",s.tgt]]
+                    .map(([k,v])=>el("div",{key:k,style:{display:"flex",justifyContent:"space-between"}},
+                      el("span",{style:{fontSize:7.5,color:"rgba(255,255,255,.5)",fontFamily:"'DM Mono',monospace"}},k+":"),
+                      el("span",{style:{fontSize:7.5,color:"#fff",fontWeight:500,fontFamily:"'DM Mono',monospace"}},v)
+                    )),
+                  s.delDate&&el("div",{style:{marginTop:"auto",background:"rgba(239,68,68,.3)",borderRadius:3,padding:"2px 4px"}},
+                    el("span",{style:{fontSize:7.5,color:"#fca5a5",fontFamily:"'DM Mono',monospace",fontWeight:700}},"DEL: "+fmtDateShort(s.delDate))
+                  ),
+                ),
+
+            // Resize handle — on merged block resizes last sub-style end date
+            !s.locked&&isRightEdge&&!mergeMode&&el("div",{className:"resize-handle",
+              onMouseDown:e=>{e.stopPropagation();startResize(e,s);}})
+          );
+        }),
+
+        // Drag ghost — shown for both canvas drags and park drags
+        dragVisual&&(()=>{
+          const li=allLines.indexOf(dragVisual.line);
+          const top=(li<0?0:li)*ROW_H+HDR_H;
+          const left=dragVisual.si*COL_W+LBL_W+2;
+          const width=(dragVisual.ei-dragVisual.si+1)*COL_W-4;
+          const fromPark=!!parkDragInfo;
+          return el("div",{className:"drop-ghost",style:{
+            left,top:top+4,width,height:ROW_H-8,zIndex:9,
+            borderColor:fromPark?ORANGE:"rgba(255,255,255,.7)",
+            background:fromPark?"rgba(224,123,57,.15)":"transparent"}},
+            fromPark&&el("div",{style:{position:"absolute",top:4,left:6,fontSize:8,
+              color:ORANGE,fontWeight:700,fontFamily:"'DM Mono',monospace",pointerEvents:"none"}},
+              "↓ DROP FROM PARKING")
+          );
+        })()
+      )
+    ),// end canvas scroll div
+
+    // Parking Zone — glows when a canvas block is being dragged over it
+    el("div",{ref:parkRef,style:{
+      width:220,flexShrink:0,
+      background:dragInfo&&dragVisual?"#162032":"#1e293b",
+      borderLeft:`1px solid ${dragInfo&&dragVisual?"#E07B39":"#334155"}`,
+      display:"flex",flexDirection:"column",
+      height:"100%",minHeight:0,overflow:"hidden",
+      transition:"background .2s,border-color .2s"}},
+      el("div",{style:{padding:"10px 12px",borderBottom:"1px solid #334155",flexShrink:0}},
+        el("p",{style:{color:"rgba(255,255,255,.5)",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1,fontFamily:"'DM Mono',monospace",margin:"0 0 2px"}},"Parking Zone"),
+        el("p",{style:{color:"rgba(255,255,255,.3)",fontSize:9,margin:0}},"Drag to/from canvas to park or restore"),
+        parked.length>0&&el("p",{style:{color:ORANGE,fontSize:9,margin:"4px 0 0",fontWeight:600}},parked.length+" style"+(parked.length>1?"s":"")+" parked")
+      ),
+      el("div",{style:{flex:1,minHeight:0,overflowY:"auto",padding:8,display:"flex",flexDirection:"column",gap:6}},
+        parked.length===0&&el("div",{style:{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+          height:"100%",gap:8,opacity:.35}},
+          el("i",{className:"ti ti-parking","aria-hidden":"true",style:{fontSize:32,color:"#fff"}}),
+          el("p",{style:{color:"#fff",fontSize:11,textAlign:"center"}},"Drop style blocks\nhere to park")
+        ),
+        parked.map(s=>{
+          const isParkDragging=parkDragInfo&&parkDragInfo.styleId===s.id;
+          return el("div",{key:s.id,
+            onMouseDown:e=>startParkDrag(e,s),
+            style:{
+              background:getColor(s),borderRadius:6,padding:"7px 9px",
+              cursor:"grab",border:"1px solid rgba(255,255,255,.15)",
+              position:"relative",overflow:"hidden",
+              opacity:isParkDragging?0.4:1,
+              transition:"opacity .15s",
+              userSelect:"none"}},
+            el("div",{style:{display:"flex",alignItems:"center",gap:4,marginBottom:2}},
+              el("i",{className:"ti ti-grip-vertical","aria-hidden":"true",
+                style:{fontSize:10,color:"rgba(255,255,255,.4)",flexShrink:0}}),
+              el("p",{style:{margin:0,fontWeight:700,fontSize:9.5,color:"#fff",
+                whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}},s.styleName)
+            ),
+            el("p",{style:{margin:"0 0 4px",fontSize:8,color:"rgba(255,255,255,.7)",
+              whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",paddingLeft:14}},s.gmtType),
+            el("p",{style:{margin:"0 0 5px",fontSize:8,color:"rgba(255,255,255,.6)",fontFamily:"'DM Mono',monospace",paddingLeft:14}},
+              (s.plnQty||0).toLocaleString()+" pcs"),
+            el("div",{style:{display:"flex",gap:4}},
+              el("button",{
+                onMouseDown:e=>e.stopPropagation(),
+                onClick:e=>{e.stopPropagation();unparkStyle(s.id);},
+                style:{flex:1,padding:"3px 0",borderRadius:4,border:"none",
+                  background:"rgba(255,255,255,.15)",color:"#fff",fontSize:8.5,
+                  cursor:"pointer",fontWeight:600}},
+                "↩ Restore"),
+              el("button",{
+                onMouseDown:e=>e.stopPropagation(),
+                onClick:e=>{e.stopPropagation();deleteStyle(s.id);},
+                style:{padding:"3px 7px",borderRadius:4,border:"none",
+                  background:"rgba(239,68,68,.25)",color:"#fca5a5",fontSize:8.5,
+                  cursor:"pointer",fontWeight:600}},
+                "✕")
+            )
+          );
+        })
+      )
+    )// end parking zone
+
+    ),// end main flex row
+
+    // Modals
+    editModal&&el(EditModal,{style:editModal,allLines,onSave:saveEdit,onDelete:deleteStyle,onClose:()=>setEditModal(null)}),
+    addModal&&el(AddModal,{allLines,onAdd:addStyle,onClose:()=>setAddModal(false)}),
+    showHistory&&el(HistoryPanel,{log:changeLog,onClose:()=>setShowHistory(false)}),
+
+    // Merge confirm modal (different delivery dates)
+    mergeConfirmModal&&el("div",{className:"modal-overlay"},
+      el("div",{className:"modal fade",style:{maxWidth:420}},
+        el("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:16}},
+          el("div",{style:{width:36,height:36,borderRadius:"50%",background:"#fef3c7",
+            display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}},
+            el("i",{className:"ti ti-alert-triangle","aria-hidden":"true",style:{color:"#d97706",fontSize:18}})),
+          el("p",{style:{fontWeight:700,fontSize:15,color:"#0f172a"}},"Different Delivery Dates")
+        ),
+        el("p",{style:{fontSize:13,color:"#475569",marginBottom:8}},"The selected blocks have different delivery dates:"),
+        el("div",{style:{background:"#fef3c7",borderRadius:8,padding:"10px 14px",marginBottom:16}},
+          mergeConfirmModal.sortedStyles.map((s,i)=>el("div",{key:i,style:{fontSize:12,color:"#92400e",
+            display:"flex",justifyContent:"space-between",padding:"2px 0"}},
+            el("span",{style:{fontWeight:600}},s.styleName),
+            el("span",{},"Del: "+fmtDateShort(s.delDate))
+          ))
+        ),
+        el("p",{style:{fontSize:12,color:"#64748b",marginBottom:18}},"The merged block will use the delivery date of the first block. Do you want to continue?"),
+        el("div",{style:{display:"flex",gap:10,justifyContent:"flex-end"}},
+          el(Btn,{onClick:()=>setMergeConfirmModal(null),
+            style:{background:"#f8fafc",color:"#64748b",border:"0.5px solid #e2e8f0"}},"Cancel"),
+          el(Btn,{onClick:()=>doMerge(true),
+            style:{background:ORANGE,color:"#fff",fontWeight:700}},
+            el("i",{className:"ti ti-arrows-join","aria-hidden":"true",style:{marginRight:5}}),"Merge Anyway")
+        )
+      )
+    ),
+  );
+}
+
+// ─── EditModal ────────────────────────────────────────────────────────────────
+function EditModal({style:s,allLines,onSave,onDelete,onClose}){
+  const [form,setForm]=useState({
+    styleName:s.styleName,gmtType:s.gmtType,line:s.line,
+    startDate:ds(s.startDate),endDate:ds(s.endDate),
+    plnQty:s.plnQty,notes:s.notes||""
+  });
+  const upd=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const newStart=localDate(form.startDate);const newEnd=localDate(form.endDate);
+  const dayDiff=Math.max(1,diffDays(newStart,newEnd)+1);
+  const newDaily=r2(form.plnQty/dayDiff);
+
+  return el("div",{className:"modal-overlay",onClick:e=>{if(e.target===e.currentTarget)onClose();}},
+    el("div",{className:"modal fade"},
+      el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}},
+        el("p",{style:{fontWeight:700,fontSize:16,color:"#0f172a"}},"Edit Style Block"),
+        el("button",{onClick:onClose,style:{background:"none",border:"none",fontSize:22,color:"#64748b",cursor:"pointer"}},"×")
+      ),
+      el("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}},
+        el(Inp,{label:"Style Name",value:form.styleName,onChange:e=>upd("styleName",e.target.value)}),
+        el(Inp,{label:"Garment Type",value:form.gmtType,onChange:e=>upd("gmtType",e.target.value)}),
+        el("div",{style:{marginBottom:12}},
+          el("label",{style:{display:"block",fontSize:12,color:"#64748b",marginBottom:5,fontWeight:500}},"Line"),
+          el("select",{value:form.line,onChange:e=>upd("line",parseInt(e.target.value)),
+            style:{width:"100%",padding:"9px 11px",border:"0.5px solid #cbd5e1",borderRadius:7,fontSize:13}},
+            allLines.map(l=>el("option",{key:l,value:l},"Line "+l))
+          )
+        ),
+        el(Inp,{label:"PLN QTY",value:form.plnQty,onChange:e=>upd("plnQty",parseFloat(e.target.value)||0),type:"number"}),
+        el(Inp,{label:"Start Date",value:form.startDate,onChange:e=>upd("startDate",e.target.value),type:"date"}),
+        el(Inp,{label:"End Date",value:form.endDate,onChange:e=>upd("endDate",e.target.value),type:"date"}),
+      ),
+      dayDiff>0&&el("div",{style:{background:"#f8fafc",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:12,color:"#475569"}},
+        `${dayDiff} days → ${newDaily} pcs/day`
+      ),
+      // Delivery date — read only
+      s.delDate&&el("div",{style:{background:"#fef2f2",borderRadius:8,padding:"10px 14px",marginBottom:14,
+        display:"flex",alignItems:"center",gap:8,fontSize:12,color:"#dc2626"}},
+        el("i",{className:"ti ti-calendar-event","aria-hidden":"true"}),
+        el("span",{style:{fontWeight:600}},"Delivery Date: "+fmtDate(s.delDate)+" (fixed — cannot be changed)")
+      ),
+      el("div",{style:{marginBottom:14}},
+        el("label",{style:{display:"block",fontSize:12,color:"#64748b",marginBottom:5,fontWeight:500}},"Notes"),
+        el("textarea",{value:form.notes,onChange:e=>upd("notes",e.target.value),rows:2,
+          style:{width:"100%",padding:"9px 11px",border:"0.5px solid #cbd5e1",borderRadius:7,fontSize:13,resize:"vertical"}})
+      ),
+      el("div",{style:{display:"flex",gap:8,justifyContent:"space-between"}},
+        el(Btn,{onClick:()=>onDelete(s.id),style:{background:"#fef2f2",color:"#dc2626",border:"0.5px solid #fca5a5"}},
+          el("i",{className:"ti ti-trash","aria-hidden":"true",style:{marginRight:5}}),"Delete"),
+        el("div",{style:{display:"flex",gap:8}},
+          el(Btn,{onClick:onClose,style:{background:"#f8fafc",color:"#64748b",border:"0.5px solid #e2e8f0"}},"Cancel"),
+          el(Btn,{onClick:()=>onSave({...s,...form,
+            startDate:localDate(form.startDate),endDate:localDate(form.endDate),
+            plnQty:parseFloat(form.plnQty)||0,prodDays:dayDiff,dailyQty:newDaily}),
+            style:{background:NAVY,color:"#fff",fontWeight:600}},"Save Changes")
+        )
+      )
+    )
+  );
+}
+
+// ─── AddModal ─────────────────────────────────────────────────────────────────
+function AddModal({allLines,onAdd,onClose}){
+  const [form,setForm]=useState({styleName:"",gmtType:"BLOUSE",line:allLines[0]||1,
+    startDate:"",endDate:"",plnQty:500,notes:""});
+  const upd=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const ok=form.styleName&&form.startDate&&form.endDate;
+  const dayDiff=form.startDate&&form.endDate?Math.max(1,diffDays(localDate(form.startDate),localDate(form.endDate))+1):0;
+  return el("div",{className:"modal-overlay",onClick:e=>{if(e.target===e.currentTarget)onClose();}},
+    el("div",{className:"modal fade"},
+      el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}},
+        el("p",{style:{fontWeight:700,fontSize:16,color:"#0f172a"}},"Add Style Block"),
+        el("button",{onClick:onClose,style:{background:"none",border:"none",fontSize:22,color:"#64748b",cursor:"pointer"}},"×")
+      ),
+      el("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}},
+        el(Inp,{label:"Style Name *",value:form.styleName,onChange:e=>upd("styleName",e.target.value)}),
+        el("div",{style:{marginBottom:12}},
+          el("label",{style:{display:"block",fontSize:12,color:"#64748b",marginBottom:5,fontWeight:500}},"Garment Type"),
+          el("select",{value:form.gmtType,onChange:e=>upd("gmtType",e.target.value),
+            style:{width:"100%",padding:"9px 11px",border:"0.5px solid #cbd5e1",borderRadius:7,fontSize:13}},
+            ["BLOUSE","SHIRT","PANT (TROUSER)","CASUAL JACKET","FORMAL JACKET","LADIES SHIRT","DRESS (GOWN)","SHORT","OTHER"].map(g=>el("option",{key:g,value:g},g))
+          )
+        ),
+        el("div",{style:{marginBottom:12}},
+          el("label",{style:{display:"block",fontSize:12,color:"#64748b",marginBottom:5,fontWeight:500}},"Line"),
+          el("select",{value:form.line,onChange:e=>upd("line",parseInt(e.target.value)),
+            style:{width:"100%",padding:"9px 11px",border:"0.5px solid #cbd5e1",borderRadius:7,fontSize:13}},
+            allLines.map(l=>el("option",{key:l,value:l},"Line "+l))
+          )
+        ),
+        el(Inp,{label:"PLN QTY",value:form.plnQty,onChange:e=>upd("plnQty",parseFloat(e.target.value)||0),type:"number"}),
+        el(Inp,{label:"Start Date *",value:form.startDate,onChange:e=>upd("startDate",e.target.value),type:"date"}),
+        el(Inp,{label:"End Date *",value:form.endDate,onChange:e=>upd("endDate",e.target.value),type:"date"}),
+      ),
+      dayDiff>0&&el("div",{style:{background:"#f8fafc",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:12,color:"#475569"}},
+        `${dayDiff} days → ${r2(form.plnQty/dayDiff)} pcs/day`
+      ),
+      el("div",{style:{display:"flex",gap:8,justifyContent:"flex-end",marginTop:4}},
+        el(Btn,{onClick:onClose,style:{background:"#f8fafc",color:"#64748b",border:"0.5px solid #e2e8f0"}},"Cancel"),
+        el(Btn,{onClick:()=>{if(!ok)return;onAdd({id:uid(),...form,
+          startDate:localDate(form.startDate),endDate:localDate(form.endDate),
+          prodDays:dayDiff,dailyQty:r2(form.plnQty/dayDiff),
+          styleColor:STYLE_COLORS[Math.floor(Math.random()*STYLE_COLORS.length)],
+          locked:false,isNew:true,operationsConfirmed:false,operations:[],isSingleEntry:false,
+          delDate:null,tgtCutDate:null,plnQty:parseFloat(form.plnQty)||0,ordQty:0,eff:0,tgt:0,merchant:""});},
+          disabled:!ok,style:{background:ORANGE,color:"#fff",fontWeight:600}},
+          el("i",{className:"ti ti-plus","aria-hidden":"true",style:{marginRight:5}}),"Add Block"
+        )
+      )
+    )
+  );
+}
+
+// ─── HistoryPanel ─────────────────────────────────────────────────────────────
+function HistoryPanel({log,onClose}){
+  return el("div",{className:"modal-overlay",onClick:e=>{if(e.target===e.currentTarget)onClose();}},
+    el("div",{className:"modal fade",style:{maxHeight:"65vh",display:"flex",flexDirection:"column",minWidth:440}},
+      el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}},
+        el("p",{style:{fontWeight:700,fontSize:15,color:"#0f172a"}},
+          el("i",{className:"ti ti-history","aria-hidden":"true",style:{marginRight:8,color:NAVY}}),"Change History"),
+        el("button",{onClick:onClose,style:{background:"none",border:"none",fontSize:22,color:"#64748b",cursor:"pointer"}},"×")
+      ),
+      log.length===0?el("p",{style:{color:"#64748b",fontSize:13,textAlign:"center",padding:"24px 0"}},"No changes yet."):
+      el("div",{style:{overflowY:"auto",flex:1}},
+        [...log].reverse().map((entry,i)=>el("div",{key:i,style:{display:"flex",gap:10,padding:"8px 0",borderBottom:"0.5px solid #f1f5f9",alignItems:"flex-start"}},
+          el("span",{style:{width:22,height:22,borderRadius:"50%",background:"#EEF2F8",display:"flex",alignItems:"center",
+            justifyContent:"center",flexShrink:0,fontSize:10,color:NAVY,fontWeight:700}},log.length-i),
+          el("div",{},
+            el("p",{style:{fontSize:12,color:"#0f172a"}},entry.msg),
+            el("p",{style:{fontSize:10,color:"#64748b",marginTop:2,fontFamily:"'DM Mono',monospace"}},entry.time)
+          )
+        ))
+      )
+    )
+  );
+}
+
+// ─── StyleManagerPage ─────────────────────────────────────────────────────────
+function StyleManagerPage({styles,obMap,onExport,page:currentPage}){
+  const [tab,setTab]=useState("all");
+  // Per-tab state
+  const [allSearch,setAllSearch]=useState("");
+  const [allLine,setAllLine]=useState("all");
+  const [allExpanded,setAllExpanded]=useState({});
+  const [allShowFull,setAllShowFull]=useState({});
+
+  const [todaySearch,setTodaySearch]=useState("");
+  const [todayLine,setTodayLine]=useState("all");
+  const [todayExpanded,setTodayExpanded]=useState({});
+  const [todayShowFull,setTodayShowFull]=useState({});
+
+  const [opsSearch,setOpsSearch]=useState("");
+  const [opsFilter,setOpsFilter]=useState("all"); // "all"|"has"|"missing"
+  const [opsExpanded,setOpsExpanded]=useState({});
+  const [opsShowFull,setOpsShowFull]=useState({});
+
+  const today=new Date();today.setHours(0,0,0,0);
+  const allLines=[...new Set(styles.map(s=>s.line))].sort((a,b)=>a-b);
+  const obLoaded=obMap&&Object.keys(obMap).length>0;
+
+  function isActive(s){
+    if(!s.startDate||!s.endDate)return false;
+    const st=new Date(s.startDate);st.setHours(0,0,0,0);
+    const en=new Date(s.endDate);en.setHours(0,0,0,0);
+    return st<=today&&en>=today;
+  }
+  function hasOps(s){
+    const ob=obMap&&obMap[s.styleName];
+    return ob&&ob.ops&&ob.ops.length>0;
+  }
+  function daysLeft(s){
+    if(!s.endDate)return null;
+    return Math.round((new Date(s.endDate)-today)/(86400*1000));
+  }
+  function workingDaysBetween(fromDate,toDate){
+    // Count Mon-Sat days from fromDate up to and including toDate
+    if(!fromDate||!toDate)return 0;
+    let count=0;
+    let cur=new Date(fromDate);cur.setHours(0,0,0,0);
+    const end=new Date(toDate);end.setHours(0,0,0,0);
+    while(cur<=end){
+      if(cur.getDay()!==0)count++;
+      cur.setDate(cur.getDate()+1);
+    }
+    return Math.max(0,count);
+  }
+  function daysElapsed(s){
+    if(!s.startDate)return 0;
+    return workingDaysBetween(s.startDate,today);
+  }
+  // Total working days based on actual start/end dates (more accurate than PRD DYS sum)
+  function totalWorkingDays(s){
+    if(!s.startDate||!s.endDate)return s.prodDays||1;
+    return Math.max(1,workingDaysBetween(s.startDate,s.endDate));
+  }
+  function delCountdown(s){
+    if(!s.delDate)return null;
+    return Math.round((new Date(s.delDate)-today)/(86400*1000));
+  }
+
+  // Summary stats
+  const totalStyles=styles.length;
+  const runningToday=styles.filter(isActive).length;
+  const haveOps=styles.filter(hasOps).length;
+  const missingOps=totalStyles-haveOps;
+
+  // Filtered lists per tab
+  function applySearch(list,search,line){
+    const q=search.toLowerCase();
+    return list.filter(s=>{
+      const matchQ=!q||s.styleName.toLowerCase().includes(q)||(s.gmtType||"").toLowerCase().includes(q)||String(s.line).includes(q);
+      const matchL=line==="all"||String(s.line)===String(line);
+      return matchQ&&matchL;
+    });
+  }
+  const allFiltered=applySearch(styles,allSearch,allLine);
+  const todayFiltered=applySearch(styles.filter(isActive),todaySearch,todayLine);
+  const opsBase=opsFilter==="has"?styles.filter(hasOps):opsFilter==="missing"?styles.filter(s=>!hasOps(s)):styles;
+  const opsFiltered=applySearch(opsBase,opsSearch,"all");
+
+  function toggleExpand(id,expandState,setExpandState){
+    setExpandState(p=>({...p,[id]:!p[id]}));
+  }
+  function toggleShowFull(id,state,setState){
+    setState(p=>({...p,[id]:!p[id]}));
+  }
+
+  // ── Shared style card renderer ──────────────────────────────────────────────
+  function StyleCard({s,expandedMap,setExpandedMap,showFullMap,setShowFullMap,showProgress=false,urgent=false}){
+    const ob=obMap&&obMap[s.styleName];
+    const sHasOps=ob&&ob.ops&&ob.ops.length>0;
+    const isExpanded=!!expandedMap[s.id];
+    const isShowFull=!!showFullMap[s.id];
+    const active=isActive(s);
+    const dl=daysLeft(s);
+    const elapsed=daysElapsed(s);
+    const dc=delCountdown(s);
+    const dlColor=dl===null?"#94a3b8":dl<0?"#dc2626":dl<=2?"#d97706":"#16a34a";
+    const dlLabel=dl===null?"—":dl<0?"Overdue by "+Math.abs(dl)+"d":dl===0?"Last day":dl+" days left";
+    const dcLabel=dc===null?"—":dc<0?"Overdue by "+Math.abs(dc)+"d":dc===0?"Del today":"Del in "+dc+" days";
+    const previewOps=sHasOps?ob.ops.slice(0,3):[];
+    const allOps=sHasOps?ob.ops:[];
+
+    return el("div",{style:{
+      border:`1px solid ${urgent?"#fca5a5":active?"#bbf7d0":sHasOps?"#e2e8f0":"#e8e8e8"}`,
+      borderRadius:12,overflow:"hidden",marginBottom:8,
+      boxShadow:urgent?"0 2px 8px rgba(220,38,38,.12)":active?"0 1px 6px rgba(22,163,74,.08)":"none",
+    }},
+      // Main row
+      el("div",{
+        onClick:()=>toggleExpand(s.id,expandedMap,setExpandedMap),
+        style:{padding:"12px 16px",
+          background:urgent?"#fff5f5":active?"#f0fdf4":"#fff",
+          display:"flex",alignItems:"center",gap:12,cursor:"pointer"}},
+
+        // Color dot
+        el("div",{style:{width:11,height:11,borderRadius:"50%",
+          background:s.styleColor||getGmtColor(s.gmtType),flexShrink:0,
+          boxShadow:"0 0 0 2px rgba(0,0,0,.08)"}}),
+
+        // Info
+        el("div",{style:{flex:1,minWidth:0}},
+          // Name + badges row
+          el("div",{style:{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:4}},
+            el("span",{style:{fontWeight:700,fontSize:13,color:"#0f172a"}},s.styleName),
+            urgent&&el("span",{style:{fontSize:10,fontWeight:700,color:"#fff",background:"#dc2626",
+              padding:"2px 7px",borderRadius:20,display:"flex",alignItems:"center",gap:3}},
+              el("i",{className:"ti ti-alert-triangle","aria-hidden":"true",style:{fontSize:9}}),"URGENT"),
+            active&&!urgent&&el("span",{style:{fontSize:10,fontWeight:700,color:"#16a34a",background:"#dcfce7",
+              padding:"2px 7px",borderRadius:20,border:"0.5px solid #bbf7d0",display:"flex",alignItems:"center",gap:3}},
+              el("span",{style:{width:5,height:5,borderRadius:"50%",background:"#16a34a",display:"inline-block"}}),
+              dlLabel),
+            !sHasOps&&el("span",{style:{fontSize:10,color:"#92400e",background:"#fef3c7",
+              padding:"2px 7px",borderRadius:20,border:"0.5px solid #fde68a"}},"No operations"),
+            s.isSingleEntry&&el("span",{style:{fontSize:10,color:"#6d28d9",background:"#f3e8ff",
+              padding:"2px 7px",borderRadius:20,border:"0.5px solid #ddd6fe"}},"Single entry"),
+          ),
+          // Details row
+          el("div",{style:{display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"}},
+            el("span",{style:{fontSize:11,color:"#64748b"}},
+              el("i",{className:"ti ti-layout-rows","aria-hidden":"true",style:{marginRight:3,fontSize:10}}),"Line "+s.line),
+            el("span",{style:{fontSize:11,color:"#64748b"}},s.gmtType),
+            el("span",{style:{fontSize:11,color:"#64748b"}},
+              el("i",{className:"ti ti-box","aria-hidden":"true",style:{marginRight:3,fontSize:10}}),(s.plnQty||0).toLocaleString()+" pcs"),
+            el("span",{style:{fontSize:11,color:"#64748b"}},
+              el("i",{className:"ti ti-calendar","aria-hidden":"true",style:{marginRight:3,fontSize:10}}),fmtDateShort(s.startDate)+" → "+fmtDateShort(s.endDate)),
+            el("span",{style:{fontSize:11,color:"#dc2626",fontWeight:500}},
+              el("i",{className:"ti ti-truck","aria-hidden":"true",style:{marginRight:3,fontSize:10}}),"Del: "+fmtDateShort(s.delDate)),
+            active&&dc!==null&&el("span",{style:{fontSize:11,fontWeight:600,
+              color:dc<0?"#dc2626":dc<=3?"#d97706":"#16a34a"}},dcLabel),
+          ),
+
+          // Progress bar (Running Today tab)
+          showProgress&&active&&(()=>{
+            const totalDays=totalWorkingDays(s);
+            const pct=Math.min(100,Math.round((elapsed/totalDays)*100));
+            const isOverrun=elapsed>totalDays;
+            const barColor=isOverrun?"#dc2626":dl<=2?"#f59e0b":"#16a34a";
+            return el("div",{style:{marginTop:7}},
+              el("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:3}},
+                el("span",{style:{fontSize:10,color:"#64748b"}},"Day "+elapsed+" of "+totalDays),
+                el("span",{style:{fontSize:10,color:barColor,fontWeight:600}},
+                  isOverrun?"Overrun by "+(elapsed-totalDays)+" day(s)":dlLabel)
+              ),
+              el("div",{style:{height:5,background:"#e2e8f0",borderRadius:10,overflow:"hidden"}},
+                el("div",{style:{height:"100%",borderRadius:10,background:barColor,
+                  width:pct+"%",transition:"width .3s"}})
+              )
+            );
+          })()
+        ),
+
+        // Right: ops count + chevron
+        el("div",{style:{display:"flex",alignItems:"center",gap:10,flexShrink:0}},
+          sHasOps&&el("div",{style:{textAlign:"right"}},
+            el("div",{style:{fontSize:12,fontWeight:600,color:NAVY}},ob.ops.length+" ops"),
+            el("div",{style:{fontSize:11,color:"#64748b",fontFamily:"'DM Mono',monospace"}},"SMV "+(ob.smv||0).toFixed(2))
+          ),
+          el("div",{style:{width:26,height:26,borderRadius:"50%",
+            background:isExpanded?NAVY:"#f1f5f9",
+            display:"flex",alignItems:"center",justifyContent:"center",transition:"all .2s"}},
+            el("i",{className:"ti "+(isExpanded?"ti-chevron-up":"ti-chevron-down"),"aria-hidden":"true",
+              style:{fontSize:13,color:isExpanded?"#fff":"#64748b"}})
+          )
+        )
+      ),
+
+      // Expanded panel
+      isExpanded&&el("div",{style:{borderTop:"1px solid #e2e8f0",background:"#f8fafc"}},
+        !sHasOps
+        // No ops message
+        ? el("div",{style:{padding:"16px",display:"flex",alignItems:"center",gap:10,color:"#92400e"}},
+            el("i",{className:"ti ti-alert-circle","aria-hidden":"true",style:{fontSize:18,flexShrink:0}}),
+            el("div",{},
+              el("p",{style:{fontSize:13,fontWeight:600,margin:"0 0 2px"}},"No operations data for this style"),
+              el("p",{style:{fontSize:12,color:"#b45309",margin:0}},"Upload the Operation Breakdown (OB) file on the Upload page.")
+            )
+          )
+        // Has ops — show preview or full
+        : el("div",{},
+            // Summary bar
+            el("div",{style:{padding:"8px 16px",background:"#eef2f8",display:"flex",
+              gap:16,flexWrap:"wrap",alignItems:"center"}},
+              el("span",{style:{fontSize:11,fontWeight:600,color:NAVY}},"Operations Breakdown"),
+              el("span",{style:{fontSize:11,color:"#64748b",display:"flex",alignItems:"center",gap:4}},
+                "Total SMV: ",el("strong",{style:{color:"#0f172a",fontFamily:"'DM Mono',monospace"}},(ob.smv||0).toFixed(2))),
+              el("span",{style:{fontSize:11,color:"#64748b",display:"flex",alignItems:"center",gap:4}},
+                "Operations: ",el("strong",{style:{color:"#0f172a"}},String(ob.ops.length))),
+              el("div",{style:{display:"flex",gap:5,flexWrap:"wrap",marginLeft:"auto"}},
+                [...new Set(ob.ops.map(op=>op.department).filter(Boolean))].map(dept=>
+                  el("span",{key:dept,style:{fontSize:10,padding:"2px 7px",borderRadius:20,fontWeight:600,
+                    background:dept==="SEW"?"#dbeafe":dept==="FIN"?"#dcfce7":dept==="PCK"?"#fef3c7":"#f3e8ff",
+                    color:dept==="SEW"?"#1d4ed8":dept==="FIN"?"#15803d":dept==="PCK"?"#92400e":"#6d28d9"}},dept)
+                )
+              )
+            ),
+            // Column headers
+            el("div",{style:{display:"grid",gridTemplateColumns:"1fr 80px 80px 70px",
+              padding:"5px 16px",borderBottom:"0.5px solid #e2e8f0",background:"#f1f5f9"}},
+              ["Description","MC Code","Dept","GSD SMV"].map(h=>
+                el("span",{key:h,style:{fontSize:10,fontWeight:700,color:"#64748b",
+                  textTransform:"uppercase",letterSpacing:.5}},h)
+              )
+            ),
+            // Ops rows — preview (top 3) or full
+            el("div",{style:{maxHeight:isShowFull?280:120,overflowY:"auto"}},
+              (isShowFull?allOps:previewOps).map((op,i)=>
+                el("div",{key:i,style:{display:"grid",gridTemplateColumns:"1fr 80px 80px 70px",
+                  padding:"6px 16px",borderBottom:"0.5px solid #f1f5f9",
+                  background:i%2===0?"#fff":"#fafafa",alignItems:"center"}},
+                  el("span",{style:{fontSize:12,color:"#0f172a"}},op.description||"—"),
+                  el("span",{style:{fontSize:11,color:"#475569",fontFamily:"'DM Mono',monospace"}},op.mcCode||"—"),
+                  el("span",{style:{fontSize:10,padding:"2px 6px",borderRadius:20,width:"fit-content",fontWeight:600,
+                    background:op.department==="SEW"?"#dbeafe":op.department==="FIN"?"#dcfce7":op.department==="PCK"?"#fef3c7":"#f3e8ff",
+                    color:op.department==="SEW"?"#1d4ed8":op.department==="FIN"?"#15803d":op.department==="PCK"?"#92400e":"#6d28d9"}},
+                    op.department||"—"),
+                  el("span",{style:{fontSize:11,color:"#475569",fontFamily:"'DM Mono',monospace",textAlign:"right"}},
+                    (op.gsdsmv||0).toFixed(3))
+                )
+              )
+            ),
+            // Show more/less button
+            allOps.length>3&&el("button",{
+              onClick:e=>{e.stopPropagation();toggleShowFull(s.id,showFullMap,setShowFullMap);},
+              style:{width:"100%",padding:"7px",border:"none",borderTop:"0.5px solid #e2e8f0",
+                background:"#f8fafc",color:NAVY,fontSize:12,fontWeight:600,cursor:"pointer",
+                display:"flex",alignItems:"center",justifyContent:"center",gap:5}},
+              el("i",{className:"ti "+(isShowFull?"ti-chevron-up":"ti-chevron-down"),"aria-hidden":"true",style:{fontSize:13}}),
+              isShowFull?"Show less":"Show all "+allOps.length+" operations"
+            )
+          )
+      )
+    );
+  }
+
+  // ── Tab content renderers ────────────────────────────────────────────────────
+  function renderAll(){
+    return el("div",{},
+      // Search + line filter
+      el("div",{style:{display:"flex",gap:10,marginBottom:14,alignItems:"center"}},
+        el("div",{style:{flex:1,position:"relative"}},
+          el("i",{className:"ti ti-search","aria-hidden":"true",style:{position:"absolute",left:10,top:"50%",
+            transform:"translateY(-50%)",color:"#64748b",fontSize:14,pointerEvents:"none"}}),
+          el("input",{placeholder:"Search style name, garment type, line...",value:allSearch,
+            onChange:e=>setAllSearch(e.target.value),
+            style:{width:"100%",padding:"9px 12px 9px 32px",border:"0.5px solid #cbd5e1",
+              borderRadius:8,fontSize:13}})
+        ),
+        el("select",{value:allLine,onChange:e=>setAllLine(e.target.value),
+          style:{padding:"9px 12px",border:"0.5px solid #cbd5e1",borderRadius:8,fontSize:13,
+            background:"#fff",color:"#374151",minWidth:120}},
+          el("option",{value:"all"},"All Lines"),
+          allLines.map(l=>el("option",{key:l,value:l},"Line "+l))
+        )
+      ),
+      el("div",{style:{fontSize:12,color:"#64748b",marginBottom:10}},allFiltered.length+" styles"),
+      allFiltered.map(s=>el(StyleCard,{key:s.id,s,
+        expandedMap:allExpanded,setExpandedMap:setAllExpanded,
+        showFullMap:allShowFull,setShowFullMap:setAllShowFull})),
+      allFiltered.length===0&&el("p",{style:{textAlign:"center",color:"#64748b",padding:"24px 0",fontSize:13}},"No styles match your search.")
+    );
+  }
+
+  function renderToday(){
+    const list=todayFiltered;
+    return el("div",{},
+      el("div",{style:{display:"flex",gap:10,marginBottom:14,alignItems:"center"}},
+        el("div",{style:{flex:1,position:"relative"}},
+          el("i",{className:"ti ti-search","aria-hidden":"true",style:{position:"absolute",left:10,top:"50%",
+            transform:"translateY(-50%)",color:"#64748b",fontSize:14,pointerEvents:"none"}}),
+          el("input",{placeholder:"Search running styles...",value:todaySearch,
+            onChange:e=>setTodaySearch(e.target.value),
+            style:{width:"100%",padding:"9px 12px 9px 32px",border:"0.5px solid #cbd5e1",
+              borderRadius:8,fontSize:13}})
+        ),
+        el("select",{value:todayLine,onChange:e=>setTodayLine(e.target.value),
+          style:{padding:"9px 12px",border:"0.5px solid #cbd5e1",borderRadius:8,fontSize:13,
+            background:"#fff",color:"#374151",minWidth:120}},
+          el("option",{value:"all"},"All Lines"),
+          allLines.map(l=>el("option",{key:l,value:l},"Line "+l))
+        )
+      ),
+      el("div",{style:{fontSize:12,color:"#64748b",marginBottom:10}},list.length+" styles running today"),
+      list.length===0
+        ?el("div",{style:{textAlign:"center",padding:"40px 0"}},
+            el("i",{className:"ti ti-calendar-off","aria-hidden":"true",style:{fontSize:36,color:"#cbd5e1",display:"block",marginBottom:8}}),
+            el("p",{style:{fontSize:13,color:"#64748b"}},todaySearch||todayLine!=="all"?"No styles match your filter.":"No styles running today."))
+        :list.map(s=>el(StyleCard,{key:s.id,s,showProgress:true,
+            expandedMap:todayExpanded,setExpandedMap:setTodayExpanded,
+            showFullMap:todayShowFull,setShowFullMap:setTodayShowFull}))
+    );
+  }
+
+  function renderOps(){
+    return el("div",{},
+      // No OB file banner
+      !obLoaded&&el("div",{style:{background:"#fef3c7",border:"0.5px solid #fde68a",borderRadius:10,
+        padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10}},
+        el("i",{className:"ti ti-alert-triangle","aria-hidden":"true",style:{color:"#d97706",fontSize:20,flexShrink:0}}),
+        el("div",{},
+          el("p",{style:{fontWeight:600,fontSize:13,color:"#92400e",margin:"0 0 2px"}},"No OB file loaded"),
+          el("p",{style:{fontSize:12,color:"#b45309",margin:0}},"Upload the Operation Breakdown file on the Upload page to see operations status.")
+        )
+      ),
+      // Search + toggle
+      el("div",{style:{display:"flex",gap:10,marginBottom:14,alignItems:"center",flexWrap:"wrap"}},
+        el("div",{style:{flex:1,position:"relative",minWidth:180}},
+          el("i",{className:"ti ti-search","aria-hidden":"true",style:{position:"absolute",left:10,top:"50%",
+            transform:"translateY(-50%)",color:"#64748b",fontSize:14,pointerEvents:"none"}}),
+          el("input",{placeholder:"Search styles...",value:opsSearch,
+            onChange:e=>setOpsSearch(e.target.value),
+            style:{width:"100%",padding:"9px 12px 9px 32px",border:"0.5px solid #cbd5e1",
+              borderRadius:8,fontSize:13}})
+        ),
+        el("div",{style:{display:"flex",gap:0,borderRadius:8,overflow:"hidden",border:"0.5px solid #cbd5e1"}},
+          [["all","All"],["has","✅ Has Ops"],["missing","⚠ Missing"]].map(([v,label])=>
+            el("button",{key:v,onClick:()=>setOpsFilter(v),style:{
+              padding:"9px 14px",border:"none",fontSize:12,fontWeight:600,cursor:"pointer",
+              background:opsFilter===v?NAVY:"#fff",
+              color:opsFilter===v?"#fff":"#64748b",
+              borderRight:v!=="missing"?"0.5px solid #cbd5e1":"none"}},label)
+          )
+        )
+      ),
+      el("div",{style:{fontSize:12,color:"#64748b",marginBottom:10}},opsFiltered.length+" styles"),
+      opsFiltered.map(s=>{
+        const urgent=isActive(s)&&!hasOps(s);
+        return el(StyleCard,{key:s.id,s,urgent,
+          expandedMap:opsExpanded,setExpandedMap:setOpsExpanded,
+          showFullMap:opsShowFull,setShowFullMap:setOpsShowFull});
+      }),
+      opsFiltered.length===0&&el("p",{style:{textAlign:"center",color:"#64748b",padding:"24px 0",fontSize:13}},
+        opsFilter==="has"?"All styles have operations data!":opsFilter==="missing"?"No missing operations — great!":"No styles match your search.")
+    );
+  }
+
+  // ── Exported list based on current tab ──────────────────────────────────────
+  function handleExportTab(){
+    const list=tab==="all"?allFiltered:tab==="today"?todayFiltered:opsFiltered;
+    const rows=list.map(s=>({
+      "Style Name":s.styleName,"GMT Type":s.gmtType,"Line":s.line,
+      "Start":ds(s.startDate),"End":ds(s.endDate),"Del":ds(s.delDate),
+      "PLN QTY":s.plnQty,"Daily QTY":s.dailyQty,"Prod Days":s.prodDays,
+      "Has Operations":hasOps(s)?"Yes":"No",
+      "Running Today":isActive(s)?"Yes":"No",
+    }));
+    const ws=XLSX.utils.json_to_sheet(rows);
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Styles");
+    XLSX.writeFile(wb,"SGL_Styles_"+(tab==="all"?"All":tab==="today"?"RunningToday":"OpsStatus")+"_"+new Date().toISOString().slice(0,10)+".xlsx");
+  }
+
+  const tabDef=[
+    {id:"all",label:"All Styles — FR Plan",icon:"ti-list",count:totalStyles},
+    {id:"today",label:"Running Today",icon:"ti-player-play",count:runningToday},
+    {id:"ops",label:"Operations Status",icon:"ti-clipboard-check",count:missingOps>0?missingOps:undefined,countColor:missingOps>0?"#dc2626":"#16a34a"},
+  ];
+
+  return el("div",{style:{display:"flex",flexDirection:"column",gap:16,paddingBottom:40}},
+
+    // ── Summary stat cards ──────────────────────────────────────────────────
+    el("div",{style:{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}},
+      [
+        {label:"Total Styles",value:totalStyles,icon:"ti-shirt",color:NAVY,bg:"#EEF2F8"},
+        {label:"Running Today",value:runningToday,icon:"ti-player-play",color:"#16a34a",bg:"#f0fdf4"},
+        {label:"Have OB Data",value:haveOps,icon:"ti-clipboard-check",color:"#0369a1",bg:"#f0f9ff"},
+        {label:"Missing OB Data",value:missingOps,icon:"ti-alert-circle",color:missingOps>0?"#dc2626":"#16a34a",bg:missingOps>0?"#fef2f2":"#f0fdf4"},
+      ].map(({label,value,icon,color,bg})=>
+        el("div",{key:label,style:{background:"#fff",border:"0.5px solid #e2e8f0",borderRadius:12,
+          padding:"16px 18px",display:"flex",alignItems:"center",gap:14}},
+          el("div",{style:{width:40,height:40,borderRadius:10,background:bg,
+            display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}},
+            el("i",{className:"ti "+icon,"aria-hidden":"true",style:{fontSize:20,color}})),
+          el("div",{},
+            el("div",{style:{fontSize:22,fontWeight:800,color:"#0f172a",lineHeight:1}},value),
+            el("div",{style:{fontSize:12,color:"#64748b",marginTop:3}},label)
+          )
+        )
+      )
+    ),
+
+    // ── Tabs + Export ───────────────────────────────────────────────────────
+    el("div",{style:{background:"#fff",border:"0.5px solid #e2e8f0",borderRadius:14,overflow:"hidden"}},
+      // Tab bar
+      el("div",{style:{display:"flex",alignItems:"center",borderBottom:"1px solid #f1f5f9",
+        padding:"0 16px",gap:0,background:"#fafafa"}},
+        tabDef.map(t=>el("button",{key:t.id,onClick:()=>setTab(t.id),style:{
+          padding:"13px 16px",border:"none",background:"transparent",cursor:"pointer",
+          fontSize:13,fontWeight:tab===t.id?700:400,
+          color:tab===t.id?NAVY:"#64748b",
+          borderBottom:tab===t.id?`2.5px solid ${NAVY}`:"2.5px solid transparent",
+          display:"flex",alignItems:"center",gap:7,transition:"all .15s",marginBottom:-1}},
+          el("i",{className:"ti "+t.icon,"aria-hidden":"true",style:{fontSize:14}}),
+          t.label,
+          t.count!==undefined&&el("span",{style:{
+            fontSize:11,fontWeight:700,padding:"1px 7px",borderRadius:20,
+            background:tab===t.id?NAVY:"#f1f5f9",
+            color:tab===t.id?"#fff":t.countColor||"#64748b"}},t.count)
+        )),
+        el("button",{onClick:handleExportTab,style:{marginLeft:"auto",padding:"7px 16px",
+          borderRadius:8,border:`0.5px solid ${NAVY}`,background:"transparent",
+          color:NAVY,fontSize:12,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6}},
+          el("i",{className:"ti ti-download","aria-hidden":"true",style:{fontSize:13}}),"Export")
+      ),
+      // Tab content
+      el("div",{style:{padding:18}},
+        tab==="all"?renderAll():tab==="today"?renderToday():renderOps()
+      )
+    )
+  );
+}
+
+function LoadingScreen({status}){
+  return el("div",{style:{minHeight:"100vh",background:NAVY,display:"flex",flexDirection:"column",
+    alignItems:"center",justifyContent:"center",gap:0,fontFamily:"'DM Sans',sans-serif",
+    position:"relative",overflow:"hidden"}},
+
+    // Animated background rings
+    el("div",{style:{position:"absolute",width:600,height:600,borderRadius:"50%",
+      border:"1px solid rgba(224,123,57,.08)",top:"50%",left:"50%",
+      transform:"translate(-50%,-50%)",animation:"spin 12s linear infinite"}}),
+    el("div",{style:{position:"absolute",width:400,height:400,borderRadius:"50%",
+      border:"1px solid rgba(224,123,57,.12)",top:"50%",left:"50%",
+      transform:"translate(-50%,-50%)",animation:"spin 8s linear infinite reverse"}}),
+    el("div",{style:{position:"absolute",width:240,height:240,borderRadius:"50%",
+      border:"1px solid rgba(224,123,57,.18)",top:"50%",left:"50%",
+      transform:"translate(-50%,-50%)",animation:"spin 5s linear infinite"}}),
+
+    // Center content
+    el("div",{style:{display:"flex",flexDirection:"column",alignItems:"center",gap:28,
+      zIndex:1,padding:32}},
+
+      // Logos row
+      el("div",{style:{display:"flex",alignItems:"center",gap:20}},
+        el("img",{src:"https://www.star.lk/wp-content/uploads/2024/12/star-logo.svg",
+          alt:"STAR",height:52,style:{filter:"brightness(0) invert(1)"},
+          onError:ev=>ev.target.style.display="none"}),
+        el("div",{style:{width:1,height:40,background:"rgba(255,255,255,.2)"}}),
+        el("img",{src:"https://www.end2end.lk/images/logo-2.png",alt:"End2End",height:32,
+          style:{background:"rgba(255,255,255,.92)",borderRadius:6,padding:"3px 10px"},
+          onError:ev=>ev.target.style.display="none"})
+      ),
+
+      // Title
+      el("div",{style:{textAlign:"center"}},
+        el("h1",{style:{color:"#fff",fontSize:26,fontWeight:700,margin:"0 0 8px",letterSpacing:.3}},
+          "SGL Planning Board Viewer"),
+        el("p",{style:{color:"rgba(255,255,255,.4)",fontSize:13,margin:0}},
+          "Loading your production plan...")
+      ),
+
+      // Animated loading bar
+      el("div",{style:{width:320,display:"flex",flexDirection:"column",gap:10}},
+        el("div",{style:{width:"100%",height:5,background:"rgba(255,255,255,.08)",
+          borderRadius:10,overflow:"hidden"}},
+          el("div",{style:{height:"100%",background:"linear-gradient(90deg,"+ORANGE+",#f59e0b)",
+            borderRadius:10,animation:"progress 1.6s ease-in-out infinite"}})
+        ),
+        el("p",{style:{color:"rgba(255,255,255,.35)",fontSize:11,
+          fontFamily:"'DM Mono',monospace",margin:0,textAlign:"center"}},status)
+      ),
+
+      // Spinning dots
+      el("div",{style:{display:"flex",gap:8,marginTop:4}},
+        [0,1,2].map(i=>el("div",{key:i,style:{
+          width:7,height:7,borderRadius:"50%",background:ORANGE,
+          opacity:.3,animation:"spin 1.2s ease-in-out "+(i*0.2)+"s infinite alternate"}}))
+      )
+    )
+  );
+}
+
+function ViewerApp(){
+  const [page,setPage]=useState("loading");
+  const [styles,setStyles]=useState([]);
+  const [obMap,setObMap]=useState({});
+  const [loadStatus,setLoadStatus]=useState("Connecting to GitHub...");
+  const [loadError,setLoadError]=useState(null);
+  const [lastUpdated,setLastUpdated]=useState(null);
+  const [refreshing,setRefreshing]=useState(false);
+  const [colorMode,setColorMode]=useState("simgroup");
+  const [selectMode,setSelectMode]=useState(false);
+  const [selectedId,setSelectedId]=useState(null);
+  const [simShowPanel,setSimShowPanel]=useState(false);
+  const [simMode,setSimMode]=useState(false);
+  const [simFilters,setSimFilters]=useState({description:true,mcCode:false,gmtType:false});
+  const [alwaysSimFilters]=useState({description:true,mcCode:false,gmtType:false});
+  const [lineSimMode,setLineSimMode]=useState(false);
+  const [lineSimFilters,setLineSimFilters]=useState({description:true,mcCode:false,gmtType:false});
+  const [lineSimThreshold,setLineSimThreshold]=useState(80);
+  const [lineSimSelectedId,setLineSimSelectedId]=useState(null);
+  const [simSubTab,setSimSubTab]=useState("consecutive");
+  const [showSimGroupInfo,setShowSimGroupInfo]=useState(false);
+  const [boardZoom,setBoardZoom]=useState(1);
+  const [viewPanelOpen,setViewPanelOpen]=useState(false);
+  // Only compute sim groups when colorMode=simgroup to avoid blocking the UI
+  const simGroups=useMemo(()=>{
+    if(colorMode!=="simgroup"&&!showSimGroupInfo)return{colorMap:{},groups:[]};
+    if(!styles.length||!obMap||!Object.keys(obMap).length)return{colorMap:{},groups:[]};
+    return buildSimGroups(styles,obMap);
+  },[colorMode,showSimGroupInfo,styles,obMap]);
+
+  async function fetchFromGitHub(showLoading){
+    if(showLoading)setLoadStatus("Fetching FR Plan from GitHub...");
+    else setRefreshing(true);
+    try{
+      // ── FR Plan ───────────────────────────────────────────────────────
+      const frRes=await fetch(GH_FR_URL,{
+        headers:{Authorization:"Bearer "+GH_TOKEN,Accept:"application/vnd.github+json"},
+        cache:"no-cache"
+      });
+      if(!frRes.ok)throw new Error("FR Plan fetch failed (HTTP "+frRes.status+"). Token may have expired.");
+      const frData=await frRes.json();
+      const frB64=frData.content.replace(/[\n\r]/g,"");
+      // Yield before heavy decode+parse to keep UI responsive
+      await new Promise(r=>setTimeout(r,0));
+      const frBin=atob(frB64);
+      await new Promise(r=>setTimeout(r,0));
+      const frBytes=new Uint8Array(frBin.length);
+      // Chunk the byte copy to avoid blocking
+      for(let i=0;i<frBin.length;i+=50000){
+        const end=Math.min(i+50000,frBin.length);
+        for(let j=i;j<end;j++)frBytes[j]=frBin.charCodeAt(j);
+        if(i+50000<frBin.length)await new Promise(r=>setTimeout(r,0));
+      }
+      await new Promise(r=>setTimeout(r,0));
+      const frWb=XLSX.read(frBytes,{type:"array",cellDates:false,raw:true});
+      await new Promise(r=>setTimeout(r,0));
+      const frWs=frWb.Sheets[frWb.SheetNames[0]];
+      const parsed=parseFRPlan(frWs);
+      await new Promise(r=>setTimeout(r,0));
+
+      // ── OB Data ───────────────────────────────────────────────────────
+      if(showLoading)setLoadStatus("Fetching OB Data from GitHub...");
+      let obMapResult={};
+      try{
+        const obMetaRes=await fetch(GH_OB_URL,{
+          headers:{Authorization:"Bearer "+GH_TOKEN,Accept:"application/vnd.github+json"},
+          cache:"no-cache"
+        });
+        if(obMetaRes.ok){
+          const obMeta=await obMetaRes.json();
+          let obBytes;
+          // Small file: content embedded in response
+          if(obMeta.content&&obMeta.content.replace(/[\n\r]/g,"").length>100){
+            const b64=obMeta.content.replace(/[\n\r]/g,"");
+            await new Promise(r=>setTimeout(r,0));
+            const bin=atob(b64);obBytes=new Uint8Array(bin.length);
+            for(let i=0;i<bin.length;i+=50000){
+              const end=Math.min(i+50000,bin.length);
+              for(let j=i;j<end;j++)obBytes[j]=bin.charCodeAt(j);
+              if(i+50000<bin.length)await new Promise(r=>setTimeout(r,0));
+            }
+          }else if(obMeta.git_url){
+            // Large file: fetch via git blob API
+            const blobRes=await fetch(obMeta.git_url,{
+              headers:{Authorization:"Bearer "+GH_TOKEN,Accept:"application/vnd.github+json"}
+            });
+            if(blobRes.ok){
+              const blobData=await blobRes.json();
+              const b64=blobData.content.replace(/[\n\r]/g,"");
+              await new Promise(r=>setTimeout(r,0));
+              const bin=atob(b64);obBytes=new Uint8Array(bin.length);
+              for(let i=0;i<bin.length;i+=50000){
+                const end=Math.min(i+50000,bin.length);
+                for(let j=i;j<end;j++)obBytes[j]=bin.charCodeAt(j);
+                if(i+50000<bin.length)await new Promise(r=>setTimeout(r,0));
+              }
+            }
+          }
+          if(obBytes){
+            // Parse OB after a tick to avoid blocking
+            await new Promise(r=>setTimeout(r,0));
+            const obWb=XLSX.read(obBytes,{type:"array"});
+            const obWs=obWb.Sheets[obWb.SheetNames[0]];
+            obMapResult=parseOB(obWs);
+          }
+        }
+      }catch(obErr){
+        console.warn("OB data fetch failed (non-fatal):",obErr.message);
+        // Continue without OB data — planning board still works
+      }
+
+      // Yield to browser before setting state to avoid blocking render
+      if(showLoading)setLoadStatus("Rendering planning board...");
+      await new Promise(r=>setTimeout(r,0));
+      setStyles(parsed.styles);
+      await new Promise(r=>setTimeout(r,0));
+      setObMap(obMapResult);
+      setLastUpdated(new Date());
+      setLoadError(null);
+      setRefreshing(false);
+      if(showLoading)setPage("board");
+    }catch(err){
+      console.error("GitHub fetch error:",err);
+      // Show last known data if available, otherwise show error screen
+      setLoadError(err.message);
+      setRefreshing(false);
+      if(styles.length===0)setPage("error");
+      else if(showLoading)setPage("board");// show stale data
+    }
+  }
+
+  useEffect(()=>{fetchFromGitHub(true);},[]);
+  useEffect(()=>{
+    const t=setInterval(()=>fetchFromGitHub(false),REFRESH_INTERVAL);
+    return()=>clearInterval(t);
+  },[]);
+
+  const tabs=[{id:"board",icon:"ti-layout-kanban",label:"Planning Board"},{id:"styles",icon:"ti-shirt",label:"Style Manager"}];
+
+  if(page==="loading")return el(LoadingScreen,{status:loadStatus});
+  // Refreshing overlay — shown during background refresh
+
+  if(page==="error")return el("div",{style:{minHeight:"100vh",background:NAVY,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}},
+    el("i",{className:"ti ti-wifi-off",style:{fontSize:52,color:"rgba(255,255,255,.25)"}}),
+    el("h2",{style:{color:"#fff",fontSize:18,fontWeight:600,margin:0}},"Could not load planning data"),
+    el("p",{style:{color:"rgba(255,255,255,.4)",fontSize:13,maxWidth:360,textAlign:"center",lineHeight:1.6}},loadError),
+    el("button",{onClick:()=>{setPage("loading");fetchFromGitHub(true);},
+      style:{padding:"10px 28px",background:ORANGE,color:"#fff",border:"none",
+        borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",marginTop:8}},"Retry")
+  );
+
+  return el("div",{style:{minHeight:"100vh",width:"100%",maxWidth:"100%",overflowX:"hidden",background:"#F0F2F7",display:"flex",flexDirection:"column"}},
+    refreshing&&el("div",{style:{position:"fixed",top:60,left:"50%",transform:"translateX(-50%)",
+      zIndex:9999,background:"rgba(11,42,74,.92)",color:"#fff",
+      padding:"8px 20px",borderRadius:20,fontSize:12,fontWeight:600,
+      display:"flex",alignItems:"center",gap:8,boxShadow:"0 4px 20px rgba(0,0,0,.3)"}},
+      el("i",{className:"ti ti-refresh",style:{fontSize:14,animation:"spin 1s linear infinite"}}),
+      "Refreshing data..."
+    ),
+
+    showSimGroupInfo&&el("div",{onClick:()=>setShowSimGroupInfo(false),
+      style:{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",padding:24}},
+      el("div",{onClick:e=>e.stopPropagation(),style:{background:"#fff",borderRadius:14,padding:24,maxWidth:640,width:"100%",
+        maxHeight:"80vh",display:"flex",flexDirection:"column",gap:14,boxShadow:"0 20px 60px rgba(0,0,0,.3)"}},
+        el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
+          el("h2",{style:{margin:0,fontSize:18,fontWeight:700,color:"#0f172a"}},"Similarity Groups"),
+          el("button",{onClick:()=>setShowSimGroupInfo(false),style:{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#94a3b8"}},"×")
+        ),
+        el("p",{style:{margin:0,fontSize:12,color:"#64748b"}},"Grouped by ≥90% op name similarity. Same color = similar work."),
+        el("div",{style:{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:8}},
+          simGroups&&simGroups.groups.length===0
+            ?el("p",{style:{color:"#94a3b8",textAlign:"center",padding:20}},"No groups found.")
+            :(simGroups?simGroups.groups:[]).map((g,gi)=>{
+              const gs=styles.filter(s=>g.styleIds.includes(s.id));
+              return el("div",{key:gi,style:{border:"1.5px solid "+g.color+"50",borderRadius:10,overflow:"hidden"}},
+                el("div",{style:{background:g.color,padding:"8px 14px",display:"flex",alignItems:"center",gap:8}},
+                  el("span",{style:{fontWeight:700,fontSize:13,color:"#fff"}},"Group "+(gi+1)),
+                  el("span",{style:{fontSize:11,color:"rgba(255,255,255,.75)"}},"— "+g.styleIds.length+" styles")
+                ),
+                el("div",{style:{padding:"8px 14px",display:"flex",flexDirection:"column",gap:4}},
+                  gs.map(s=>el("div",{key:s.id,style:{display:"flex",alignItems:"center",gap:10,fontSize:12}},
+                    el("span",{style:{fontWeight:600,color:"#0f172a",minWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},s.styleName),
+                    el("span",{style:{color:"#94a3b8",fontSize:11}},"Line "+s.line),
+                    el("span",{style:{color:"#64748b",fontSize:11}},s.gmtType)
+                  ))
+                )
+              );
+            })
+        )
+      )
+    ),
+
+    viewPanelOpen&&page==="board"&&el("div",{},
+      el("div",{onClick:()=>setViewPanelOpen(false),style:{position:"fixed",inset:0,zIndex:200,background:"transparent"}}),
+      el("div",{className:"pbv-viewpanel",style:{position:"fixed",top:58,right:0,width:300,maxWidth:"100vw",background:"#0f1f3d",
+        borderLeft:"1px solid rgba(255,255,255,.12)",boxShadow:"-8px 0 32px rgba(0,0,0,.4)",
+        zIndex:201,display:"flex",flexDirection:"column",maxHeight:"calc(100vh - 58px)",overflowY:"auto"}},
+        el("div",{style:{padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,.1)",display:"flex",alignItems:"center",justifyContent:"space-between"}},
+          el("span",{style:{color:"#fff",fontWeight:700,fontSize:14}},"View Options"),
+          el("button",{onClick:()=>setViewPanelOpen(false),style:{background:"none",border:"none",color:"rgba(255,255,255,.5)",fontSize:18,cursor:"pointer",lineHeight:1}},"×")
+        ),
+        el("div",{style:{padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,.08)"}},
+          el("p",{style:{margin:"0 0 10px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,.4)",textTransform:"uppercase",letterSpacing:1}},"Color Mode"),
+          el("div",{style:{display:"flex",flexDirection:"column",gap:6}},
+            [["style","By Style","ti-palette"],["garment","By Garment","ti-shirt"],["simgroup","By Similarity Group","ti-circles-relation"]].map(([m,lbl,icon])=>
+              el("button",{key:m,onClick:()=>setColorMode(m),style:{
+                padding:"8px 12px",border:"0.5px solid "+(colorMode===m?"rgba(255,255,255,.5)":"rgba(255,255,255,.1)"),
+                background:colorMode===m?"rgba(255,255,255,.12)":"transparent",
+                color:colorMode===m?"#fff":"rgba(255,255,255,.5)",
+                borderRadius:7,cursor:"pointer",fontSize:12,fontWeight:colorMode===m?600:400,
+                display:"flex",alignItems:"center",gap:8}},
+                el("i",{className:"ti "+icon,style:{fontSize:14,color:colorMode===m?ORANGE:"rgba(255,255,255,.3)"}}),
+                lbl,
+                colorMode===m&&el("i",{className:"ti ti-check",style:{marginLeft:"auto",color:ORANGE,fontSize:12}})
+              )
+            ),
+            colorMode==="simgroup"&&el("button",{onClick:()=>{setViewPanelOpen(false);setShowSimGroupInfo(true);},
+              style:{padding:"7px 12px",border:"0.5px solid rgba(255,165,0,.4)",background:"rgba(255,165,0,.08)",
+                color:"#fde68a",borderRadius:7,cursor:"pointer",fontSize:11,display:"flex",alignItems:"center",gap:6}},
+              el("i",{className:"ti ti-info-circle",style:{fontSize:13}}),"View Similarity Groups Info")
+          )
+        ),
+        el("div",{style:{padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,.08)"}},
+          el("p",{style:{margin:"0 0 10px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,.4)",textTransform:"uppercase",letterSpacing:1}},"Delivery Date"),
+          el("label",{style:{display:"flex",alignItems:"center",gap:10,cursor:"pointer",
+            padding:"8px 12px",border:"0.5px solid "+(selectMode?"rgba(239,68,68,.5)":"rgba(255,255,255,.1)"),
+            borderRadius:7,background:selectMode?"rgba(239,68,68,.1)":"transparent"}},
+            el("input",{type:"checkbox",checked:selectMode,onChange:e=>{setSelectMode(e.target.checked);if(!e.target.checked)setSelectedId(null);},
+              style:{width:15,height:15,accentColor:"#ef4444",cursor:"pointer"}}),
+            el("div",{},
+              el("p",{style:{margin:"0 0 2px",fontSize:12,color:selectMode?"#fca5a5":"rgba(255,255,255,.7)",fontWeight:500}},"Del. Date View"),
+              el("p",{style:{margin:0,fontSize:10,color:"rgba(255,255,255,.3)"}},selectMode?"Click a block to highlight delivery date":"Toggle to view delivery dates")
+            )
+          )
+        ),
+        el("div",{style:{padding:"14px 18px"}},
+          el("p",{style:{margin:"0 0 10px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,.4)",textTransform:"uppercase",letterSpacing:1}},"Check Similarities"),
+          el("button",{onClick:()=>setSimShowPanel(p=>!p),
+            style:{width:"100%",padding:"8px 12px",
+              border:"0.5px solid "+(simShowPanel?"rgba(255,165,0,.5)":"rgba(255,255,255,.1)"),
+              background:simShowPanel?"rgba(255,165,0,.12)":"transparent",
+              color:simShowPanel?"#fde68a":"rgba(255,255,255,.6)",
+              borderRadius:7,cursor:"pointer",fontSize:12,fontWeight:500,display:"flex",alignItems:"center",gap:8}},
+            el("i",{className:"ti ti-arrows-diff",style:{fontSize:14,color:simShowPanel?ORANGE:"rgba(255,255,255,.3)"}}),
+            simShowPanel?"Similarities Panel Open":"Open Similarities Panel",
+            simMode&&el("span",{style:{marginLeft:"auto",fontSize:10,color:ORANGE,fontWeight:700}},"ON")
+          )
+        )
+      )
+    ),
+
+    el("div",{className:"pbv-topbar",style:{background:NAVY,padding:"0 22px",display:"flex",alignItems:"center",
+      justifyContent:"space-between",height:58,boxShadow:"0 2px 12px rgba(0,0,0,.18)",flexShrink:0}},
+      el("div",{style:{display:"flex",alignItems:"center",gap:14}},
+        el("img",{src:"https://www.star.lk/wp-content/uploads/2024/12/star-logo.svg",alt:"SGL",height:30,
+          style:{filter:"brightness(0) invert(1)"},onError:ev=>ev.target.style.display="none"}),
+        el("div",{style:{width:1,height:26,background:"rgba(255,255,255,.2)"}}),
+        el("span",{style:{color:"#fff",fontSize:14,fontWeight:600,letterSpacing:.2}},"Planning Board Viewer"),
+        loadError&&el("span",{style:{fontSize:10,color:"#fbbf24",background:"rgba(251,191,36,.1)",
+          border:"0.5px solid rgba(251,191,36,.3)",borderRadius:4,padding:"2px 8px",marginLeft:8}},
+          "⚠ Showing cached data")
+      ),
+      el("div",{style:{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}},
+        lastUpdated&&el("span",{className:"pbv-updated",style:{fontSize:10,color:"rgba(255,255,255,.3)",fontFamily:"'DM Mono',monospace"}},
+          "Updated "+lastUpdated.toLocaleTimeString()),
+        el("button",{onClick:()=>fetchFromGitHub(false),title:"Refresh now",
+          style:{padding:"4px 10px",border:"0.5px solid rgba(255,255,255,.2)",background:"transparent",
+            color:"rgba(255,255,255,.5)",borderRadius:6,cursor:"pointer",fontSize:11,
+            display:"flex",alignItems:"center",gap:4}},
+          el("i",{className:"ti ti-refresh",style:{fontSize:13}}),el("span",{className:"pbv-btn-label"},"Refresh")),
+        el("div",{className:"pbv-divider",style:{width:1,height:20,background:"rgba(255,255,255,.15)"}}),
+        page==="board"&&el("button",{onClick:()=>setViewPanelOpen(p=>!p),
+          style:{padding:"5px 14px",border:"0.5px solid "+(viewPanelOpen?"rgba(255,255,255,.7)":"rgba(255,255,255,.2)"),
+            background:viewPanelOpen?"rgba(255,255,255,.15)":"transparent",
+            color:viewPanelOpen?"#fff":"rgba(255,255,255,.65)",
+            borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:500,
+            display:"flex",alignItems:"center",gap:6}},
+          el("i",{className:"ti ti-adjustments-horizontal",style:{fontSize:14}}),el("span",{className:"pbv-btn-label"},"View Options")),
+        page==="board"&&el("div",{className:"pbv-zoom",style:{display:"flex",alignItems:"center",gap:2,
+          border:"0.5px solid rgba(255,255,255,.2)",borderRadius:8,overflow:"hidden",background:"rgba(255,255,255,.05)"}},
+          el("button",{title:"Zoom out",onClick:()=>setBoardZoom(z=>Math.max(.5,+(z-.1).toFixed(1))),
+            style:{padding:"7px 12px",border:"none",background:"transparent",color:"rgba(255,255,255,.7)",cursor:"pointer",display:"flex",alignItems:"center"}},
+            el("i",{className:"ti ti-zoom-out",style:{fontSize:16}})),
+          el("span",{style:{fontSize:11,color:"rgba(255,255,255,.6)",padding:"0 2px",minWidth:36,textAlign:"center",fontWeight:500}},Math.round(boardZoom*100)+"%"),
+          el("button",{title:"Zoom in",onClick:()=>setBoardZoom(z=>Math.min(1.5,+(z+.1).toFixed(1))),
+            style:{padding:"7px 12px",border:"none",background:"transparent",color:"rgba(255,255,255,.7)",cursor:"pointer",display:"flex",alignItems:"center"}},
+            el("i",{className:"ti ti-zoom-in",style:{fontSize:16}}))
+        ),
+        el("div",{className:"pbv-poweredby",style:{display:"flex",alignItems:"center",gap:6}},
+          el("span",{style:{color:"rgba(255,255,255,.25)",fontSize:10}},"Powered by"),
+          el("img",{src:"https://www.end2end.lk/images/logo-2.png",alt:"End2End",height:24,
+            style:{filter:"none",opacity:1,background:"rgba(255,255,255,.9)",borderRadius:5,padding:"2px 7px"},
+            onError:ev=>ev.target.style.display="none"})
+        )
+      )
+    ),
+
+    el("div",{style:{background:NAVY,borderBottom:"3px solid "+ORANGE,display:"flex",padding:"0 22px",gap:2,flexShrink:0}},
+      tabs.map(t=>el("button",{key:t.id,onClick:()=>setPage(t.id),style:{
+        background:page===t.id?ORANGE:"transparent",border:"none",
+        color:page===t.id?"#fff":"rgba(255,255,255,.55)",
+        padding:"10px 18px",cursor:"pointer",display:"flex",alignItems:"center",gap:7,
+        fontSize:13,fontWeight:page===t.id?600:400,borderRadius:"4px 4px 0 0"}},
+        el("i",{className:"ti "+t.icon,style:{fontSize:15}}),t.label
+      ))
+    ),
+
+    page==="board"&&styles.length>0&&el("div",{className:"pbv-legend",style:{background:NAVY,padding:"6px 22px",
+      display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",flexShrink:0}},
+      el("span",{style:{color:"rgba(255,255,255,.4)",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1,flexShrink:0}},"Legend:"),
+      GMT_COLORS_MAP.map(([gmt,color])=>
+        el("div",{key:gmt,style:{display:"flex",alignItems:"center",gap:4}},
+          el("div",{style:{width:9,height:9,borderRadius:"50%",background:color,flexShrink:0}}),
+          el("span",{style:{fontSize:10,color:"rgba(255,255,255,.6)",whiteSpace:"nowrap"}},gmt)
+        )
+      )
+    ),
+
+    page==="board"&&simShowPanel&&el("div",{style:{background:"#1a2744",borderBottom:"1px solid #2d3f6e",padding:"0 22px",flexShrink:0}},
+      el("div",{style:{display:"flex",gap:0,borderBottom:"1px solid #2d3f6e"}},
+        [["consecutive","Consecutive Similarity"],["line","Line Similarity"]].map(([id,label])=>
+          el("button",{key:id,onClick:()=>{setSimSubTab(id);if(id==="consecutive"){setLineSimMode(false);setLineSimSelectedId(null);}if(id==="line")setSimMode(false);},
+            style:{padding:"8px 18px",border:"none",background:"transparent",cursor:"pointer",fontSize:12,
+              fontWeight:simSubTab===id?700:400,color:simSubTab===id?"#fde68a":"rgba(255,255,255,.45)",
+              borderBottom:simSubTab===id?"2px solid "+ORANGE:"2px solid transparent",marginBottom:-1}},label)
+        )
+      ),
+      simSubTab==="consecutive"&&el("div",{style:{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"10px 0"}},
+        el("span",{style:{color:"rgba(255,255,255,.5)",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1}},"Match by:"),
+        [["description","Operation Name"],["mcCode","Machine Code"],["gmtType","Garment Type"]].map(([k,label])=>
+          el("label",{key:k,style:{display:"flex",alignItems:"center",gap:5,cursor:"pointer",color:"rgba(255,255,255,.75)",fontSize:12}},
+            el("input",{type:"checkbox",checked:simFilters[k],onChange:e=>setSimFilters(p=>({...p,[k]:e.target.checked})),
+              style:{width:14,height:14,accentColor:ORANGE,cursor:"pointer"}}),label)
+        ),
+        el("div",{style:{width:1,height:18,background:"rgba(255,255,255,.15)"}}),
+        el("button",{onClick:()=>setSimMode(m=>!m),disabled:!Object.values(simFilters).some(Boolean),
+          style:{padding:"5px 14px",borderRadius:6,border:"none",fontSize:11,fontWeight:700,cursor:"pointer",
+            background:simMode?ORANGE:"rgba(255,255,255,.15)",color:"#fff"}},simMode?"✓ ON — Click to Hide":"Apply & Show"),
+        simMode&&el("button",{onClick:()=>setSimMode(false),
+          style:{padding:"5px 10px",borderRadius:6,border:"0.5px solid rgba(255,255,255,.2)",background:"transparent",color:"rgba(255,255,255,.5)",fontSize:11,cursor:"pointer"}},"Reset"),
+        el("div",{style:{marginLeft:"auto",fontSize:10,color:"rgba(255,255,255,.35)",fontFamily:"'DM Mono',monospace"}},
+          Object.keys(obMap).length>0?"OB: "+Object.keys(obMap).length+" styles":"⚠ No OB data"),
+        simMode&&el("div",{style:{display:"flex",gap:8,flexWrap:"wrap"}},
+          [["#16a34a","80–100%"],["#2563eb","60–80%"],["#ca8a04","40–60%"],["#dc2626","20–40%"],["#6b7280","0–20%"]].map(([c,l])=>
+            el("div",{key:l,style:{display:"flex",alignItems:"center",gap:4}},
+              el("div",{style:{width:10,height:10,borderRadius:"50%",background:c}}),
+              el("span",{style:{fontSize:10,color:"rgba(255,255,255,.55)"}},l)))
+        )
+      ),
+      simSubTab==="line"&&el("div",{style:{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"10px 0"}},
+        el("span",{style:{color:"rgba(255,255,255,.5)",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1}},"Match by:"),
+        [["description","Operation Name"],["mcCode","Machine Code"],["gmtType","Garment Type"]].map(([k,label])=>
+          el("label",{key:k,style:{display:"flex",alignItems:"center",gap:5,cursor:"pointer",color:"rgba(255,255,255,.75)",fontSize:12}},
+            el("input",{type:"checkbox",checked:lineSimFilters[k],onChange:e=>setLineSimFilters(p=>({...p,[k]:e.target.checked})),
+              style:{width:14,height:14,accentColor:"#a78bfa",cursor:"pointer"}}),label)
+        ),
+        el("div",{style:{width:1,height:18,background:"rgba(255,255,255,.15)"}}),
+        el("span",{style:{color:"rgba(255,255,255,.5)",fontSize:11}},"Threshold:"),
+        el("input",{type:"number",value:lineSimThreshold,min:0,max:100,step:5,
+          onChange:e=>setLineSimThreshold(parseInt(e.target.value)||80),
+          style:{width:56,padding:"3px 7px",borderRadius:5,border:"0.5px solid rgba(255,255,255,.2)",
+            background:"rgba(255,255,255,.08)",color:"#fff",fontSize:12,textAlign:"center"}}),
+        el("span",{style:{color:"rgba(255,255,255,.4)",fontSize:11}},"%"),
+        el("div",{style:{width:1,height:18,background:"rgba(255,255,255,.15)"}}),
+        el("button",{onClick:()=>{if(lineSimMode){setLineSimMode(false);setLineSimSelectedId(null);}else setLineSimMode(true);},
+          style:{padding:"5px 14px",borderRadius:6,border:"none",fontSize:11,fontWeight:700,cursor:"pointer",
+            background:lineSimMode?"#7c3aed":"rgba(255,255,255,.15)",color:"#fff"}},
+          lineSimMode?"✓ Line Sim ON — Click to disable":"Enable Line Similarity"),
+        lineSimMode&&el("button",{onClick:()=>{setLineSimMode(false);setLineSimSelectedId(null);},
+          style:{padding:"5px 10px",borderRadius:6,border:"0.5px solid rgba(255,255,255,.2)",background:"transparent",color:"rgba(255,255,255,.5)",fontSize:11,cursor:"pointer"}},"Reset"),
+        lineSimMode&&el("span",{style:{fontSize:11,color:"rgba(255,255,255,.4)",fontStyle:"italic"}},
+          lineSimSelectedId?"Click another block to compare":"← Click any block to select it"),
+        el("div",{style:{marginLeft:"auto",fontSize:10,color:"rgba(255,255,255,.35)",fontFamily:"'DM Mono',monospace"}},
+          Object.keys(obMap).length>0?"OB: "+Object.keys(obMap).length+" styles":"⚠ No OB data")
+      )
+    ),
+
+    page==="board"&&(styles.length===0
+      ?el("div",{style:{padding:40,textAlign:"center",color:"#94a3b8",fontSize:14}},"Loading data...")
+      :el(ErrorBoundary,{key:"pb"},
+          el(PlanningBoardView,{styles,colorMode,onEdit:null,selectMode,selectedId,
+            onSelectStyle:id=>setSelectedId(p=>p===id?null:id),key:"pbv",
+            simMode,simFilters,obMap,highlightId:null,
+            lineSimMode,lineSimFilters,lineSimThreshold,
+            lineSimSelectedId,onLineSimSelect:id=>setLineSimSelectedId(p=>p===id?null:id),
+            alwaysSimFilters,simGroups,boardZoom})
+        )
+    ),
+    page==="styles"&&el(StyleManagerPage,{styles,obMap,onExport:null})
+  );
+}
+
+ReactDOM.render(el(ErrorBoundary,{},el(ViewerApp,{})),document.getElementById("root"));
+
+</script>
+</body>
+</html>
