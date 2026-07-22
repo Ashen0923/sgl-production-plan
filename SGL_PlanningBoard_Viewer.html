@@ -980,10 +980,11 @@ function PlanningBoardView({styles,colorMode,onEdit,selectMode,selectedId,onSele
 
   return el("div",{style:{position:"relative",height:"100%",display:"flex",flexDirection:"column"}},
     Tooltip,
-    el("div",{style:{flex:1,overflowX:"auto",overflowY:"auto",border:"none",background:"#fff"}},
+    el("div",{style:{flex:1,overflowX:"auto",overflowY:"auto",border:"none",background:"#fff",minHeight:0}},
       el("div",{style:{width:totalW,position:"relative",
         transform:"scale("+boardZoom+")",transformOrigin:"top left",
-        transition:"transform .15s"}},
+        transition:"transform .15s",background:"#fff",
+        minWidth:"100%"}},
 
         // Month header
         el("div",{style:{position:"sticky",top:0,zIndex:30,height:HDR_H/2,display:"flex",background:NAVY,marginLeft:LBL_W}},
@@ -2759,16 +2760,12 @@ function ViewerApp(){
   const [simSubTab,setSimSubTab]=useState("consecutive");
   const [showSimGroupInfo,setShowSimGroupInfo]=useState(false);
   const [boardZoom,setBoardZoom]=useState(1);
-  // Mobile zoom buttons hook
+  // Expose zoom control to mobile buttons via window
   React.useEffect(()=>{
-    const handler=e=>{
-      const dir=e.detail?.dir;
-      if(dir==='in')setBoardZoom(z=>Math.min(2.0,+(z+0.1).toFixed(1)));
-      if(dir==='out')setBoardZoom(z=>Math.max(0.4,+(z-0.1).toFixed(1)));
-    };
-    window.addEventListener('viewer-zoom',handler);
-    return()=>window.removeEventListener('viewer-zoom',handler);
-  },[]);
+    window.__viewerZoomIn=()=>setBoardZoom(z=>Math.min(2.0,+(z+0.1).toFixed(1)));
+    window.__viewerZoomOut=()=>setBoardZoom(z=>Math.max(0.4,+(z-0.1).toFixed(1)));
+    return()=>{window.__viewerZoomIn=null;window.__viewerZoomOut=null;};
+  },[setBoardZoom]);
   const [viewPanelOpen,setViewPanelOpen]=useState(false);
   const [simGroups,setSimGroups]=useState({colorMap:{},groups:[]});
   const [simGroupsDirty,setSimGroupsDirty]=useState(true);
@@ -3110,10 +3107,10 @@ const isMobile=()=>window.innerWidth<=1024||('ontouchstart' in window);
 
 // Floating zoom buttons — hook into React boardZoom state via custom events
 document.getElementById('zoomIn').addEventListener('click',()=>{
-  window.dispatchEvent(new CustomEvent('viewer-zoom',{detail:{dir:'in'}}));
+  if(window.__viewerZoomIn)window.__viewerZoomIn();
 });
 document.getElementById('zoomOut').addEventListener('click',()=>{
-  window.dispatchEvent(new CustomEvent('viewer-zoom',{detail:{dir:'out'}}));
+  if(window.__viewerZoomOut)window.__viewerZoomOut();
 });
 
 // Block detail popup
