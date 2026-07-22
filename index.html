@@ -2,17 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=5.0,user-scalable=yes"/>
-<meta name="mobile-web-app-capable" content="yes"/>
-<meta name="apple-mobile-web-app-capable" content="yes"/>
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-<meta name="apple-mobile-web-app-title" content="Digital Planning Board"/>
-<meta name="theme-color" content="#0B2A4A"/>
-<link rel="manifest" href="manifest.json"/>
-<link rel="apple-touch-icon" href="icon-192.png"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>SGL Planning Board Viewer</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -20,6 +11,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
 <style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'DM Sans',system-ui,sans-serif;background:#0B2A4A;color:#1a1a2e;min-height:100vh}
 input,select,textarea{font-family:inherit;color:#1a1a2e;background:#fff;outline:none}
@@ -45,58 +37,6 @@ button:active{transform:scale(.97)}
 .focused{opacity:1;transition:opacity .3s}
 @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 @keyframes progress{from{width:0%}to{width:100%}}
-
-/* ── Mobile & Tablet Responsive ─────────────────────────────────────── */
-/* White background only for board area, not loading screen */
-.board-scroll-area{background:#fff;}
-@media(max-width:768px){
-  .nav-bar{padding:0 12px!important;height:52px!important;}
-  .nav-title{font-size:13px!important;}
-  .nav-btn{padding:5px 8px!important;font-size:11px!important;}
-  .tab-bar{padding:0 8px!important;gap:4px!important;}
-  .tab-btn{padding:8px 10px!important;font-size:12px!important;}
-}
-/* Floating zoom buttons for mobile */
-#mobileZoom{
-  display:none;
-  position:fixed;bottom:24px;right:16px;z-index:999;
-  flex-direction:column;gap:8px;
-}
-@media(max-width:1024px){
-  #mobileZoom{display:flex;}
-}
-.zoom-fab{
-  width:44px;height:44px;border-radius:50%;
-  background:#0B2A4A;color:#fff;border:2px solid #E07B39;
-  font-size:22px;font-weight:700;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;
-  box-shadow:0 4px 16px rgba(0,0,0,.35);
-  -webkit-tap-highlight-color:transparent;
-}
-/* Block detail popup */
-#blockPopup{
-  display:none;position:fixed;inset:0;z-index:9999;
-  background:rgba(0,0,0,.55);align-items:flex-end;justify-content:center;
-  padding:0;
-}
-#blockPopup.open{display:flex;}
-#blockPopupCard{
-  background:#fff;border-radius:18px 18px 0 0;
-  width:100%;max-width:480px;padding:20px 20px 32px;
-  box-shadow:0 -8px 40px rgba(0,0,0,.2);
-  max-height:80vh;overflow-y:auto;
-}
-#blockPopupHandle{
-  width:40px;height:4px;border-radius:2px;
-  background:#e2e8f0;margin:0 auto 16px;
-}
-.popup-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f1f5f9;}
-.popup-row:last-child{border-bottom:none;}
-.popup-label{font-size:12px;color:#64748b;font-weight:500;}
-.popup-value{font-size:13px;color:#0f172a;font-weight:600;text-align:right;}
-.popup-title{font-size:17px;font-weight:700;color:#0B2A4A;margin-bottom:4px;}
-.popup-subtitle{font-size:12px;color:#64748b;margin-bottom:16px;}
-.popup-close{position:absolute;top:16px;right:16px;background:none;border:none;font-size:22px;color:#94a3b8;cursor:pointer;}
 </style>
 </head>
 <body>
@@ -104,7 +44,7 @@ button:active{transform:scale(.97)}
 <script>
 
 // GH constants defined below in shared code — just add refresh interval and FR URL alias
-const REFRESH_INTERVAL=10*60*1000;// 10 min on mobile-friendly viewer
+const REFRESH_INTERVAL=5*60*1000;
 
 window.onerror=function(msg,src,line,col,err){console.error("GLOBAL ERROR:",msg,"\nFile:",src,"Line:",line,"\nError:",err);return false;};
 window.onunhandledrejection=function(e){console.error("UNHANDLED PROMISE:",e.reason);};
@@ -267,6 +207,7 @@ function parseFRPlan(sheet){
   // Group consecutive rows by STYLE-NO
   const groups=[];
   let cur=null;
+  let lastKeyByLine={};
   for(let i=1;i<rows.length;i++){
     const row=rows[i];
     const styleNo=String(row[C.styleNo]||"").trim();
@@ -274,19 +215,19 @@ function parseFRPlan(sheet){
     const facLine=String(row[C.facLine]||"").trim();
     if(!facLine)continue;
     const key=facLine+"||"+styleNo;
-    if(!cur||cur.key!==key){
+    const acc=String(row[C.acc]||"").trim();
+    const styleOpt=String(row[C.styleOpt]||"").trim();
+    const isSummaryRow=!acc&&!styleOpt;
+    // Use per-line lastKey tracking — global lastKey fails when lines interleave
+    const lineLastKey=lastKeyByLine[facLine]||null;
+    const isGap=!isSummaryRow&&cur&&cur.key===key&&lineLastKey!==null&&lineLastKey!==key;
+    if(!cur||cur.key!==key||isGap){
       if(cur)groups.push(cur);
       const mg=C.mergeGroup>=0?String(row[C.mergeGroup]||"").trim():"";
       cur={key,facLine,styleNo,rows:[],summaryRow:null,mergeGroup:mg||null};
     }
-    const acc=String(row[C.acc]||"").trim();
-    const styleOpt=String(row[C.styleOpt]||"").trim();
-    if(!acc&&!styleOpt){
-      // summary row
-      cur.summaryRow=row;
-    }else{
-      cur.rows.push(row);
-    }
+    if(!isSummaryRow)lastKeyByLine[facLine]=key;
+    if(isSummaryRow){cur.summaryRow=row;}else{cur.rows.push(row);}
   }
   if(cur)groups.push(cur);
 
@@ -378,7 +319,7 @@ function parseFRPlan(sheet){
   // Deduplicate by styleNo+line
   const seen=new Set();
   const dedupedStyles=styles.filter(s=>{
-    const key=s.styleNo+"||"+s.line;
+    const key=s.styleNo+"||"+s.line+"||"+(s.startDate?s.startDate.getTime():0);
     if(seen.has(key))return false;
     seen.add(key);return true;
   });
@@ -861,35 +802,35 @@ function buildLineSimilarityForStyle(selectedStyle,allStyles,obMap,filters){
 function buildSimGroups(styles,obMap){
   const palette=["#0891b2","#059669","#7c3aed","#b45309","#0369a1","#be185d",
     "#4338ca","#15803d","#9d174d","#c2410c","#0f766e","#6d28d9","#065f46","#92400e"];
-  // Pre-build op description sets per style (O(n) pass)
-  const opSets={};// styleId -> Set of lowercase descriptions
+  // Pre-build op description sets per style O(n)
+  const opSets={};
   styles.forEach(s=>{
     const ops=getStyleOps(s,obMap);
     if(ops&&ops.length)opSets[s.id]=new Set(ops.map(o=>(o.description||"").toLowerCase().trim()));
   });
-  // Fast similarity: |A∩B|/|B| >= 0.9 using set intersection
+  // Bidirectional similarity — max of A→B and B→A
   function fastSim(idA,idB){
     const a=opSets[idA],b=opSets[idB];
-    if(!a||!b||!b.size)return 0;
-    let matched=0;b.forEach(op=>{if(a.has(op))matched++;});
-    return Math.round(matched/b.size*100);
+    if(!a||!b||!a.size||!b.size)return 0;
+    let ab=0;b.forEach(op=>{if(a.has(op))ab++;});
+    let ba=0;a.forEach(op=>{if(b.has(op))ba++;});
+    return Math.round(Math.max(ab/b.size,ba/a.size)*100);
   }
-  const groups=[];
-  const assigned={};
-  let colorIdx=0;
-  styles.forEach(s=>{
-    if(assigned[s.id]!==undefined||!opSets[s.id])return;
-    const similar=[s.id];
-    styles.forEach(t=>{
-      if(t.id===s.id||assigned[t.id]!==undefined||!opSets[t.id])return;
-      if(fastSim(s.id,t.id)>=90)similar.push(t.id);
-    });
-    if(similar.length>=2){
-      const color=palette[colorIdx%palette.length];colorIdx++;
-      const gIdx=groups.length;
-      groups.push({color,styleIds:similar});
-      similar.forEach(id=>{assigned[id]=gIdx;});
-    }
+  // Union-Find so already-assigned styles are still considered
+  const ids=styles.map(s=>s.id).filter(id=>opSets[id]);
+  const par={};ids.forEach(id=>{par[id]=id;});
+  function find(x){while(par[x]!==x){par[x]=par[par[x]];x=par[x];}return x;}
+  // Compare all pairs and union if >=90%
+  for(let i=0;i<ids.length;i++)
+    for(let j=i+1;j<ids.length;j++)
+      if(fastSim(ids[i],ids[j])>=90)par[find(ids[i])]=find(ids[j]);
+  // Cluster by root
+  const clusters={};
+  ids.forEach(id=>{const r=find(id);(clusters[r]=clusters[r]||[]).push(id);});
+  const groups=[];let ci=0;
+  Object.values(clusters).forEach(c=>{
+    if(c.length<2)return;
+    groups.push({color:palette[ci++%palette.length],styleIds:c});
   });
   const colorMap={};
   groups.forEach(g=>g.styleIds.forEach(id=>{colorMap[id]=g.color;}));
@@ -920,9 +861,17 @@ function PlanningBoardView({styles,colorMode,onEdit,selectMode,selectedId,onSele
   simGroups=null,boardZoom=1}){
   // Build similarity data if sim mode is on
   const simData=useMemo(()=>simMode?buildLineSimilarities(styles,obMap,simFilters):{},[simMode,styles,obMap,simFilters]);
-  // Always-on consecutive similarity data (no color, just labels)
-  const alwaysSimData=useMemo(()=>buildLineSimilarities(styles,obMap,alwaysSimFilters),
-    [styles,obMap,alwaysSimFilters]);
+  // Always-on consecutive similarity data — deferred to avoid blocking initial render
+  const [alwaysSimData,setAlwaysSimData]=useState({});
+  useEffect(()=>{
+    if(!styles.length)return;
+    // Defer similarity computation so board renders first
+    const t=setTimeout(()=>{
+      const result=buildLineSimilarities(styles,obMap,alwaysSimFilters);
+      setAlwaysSimData(result);
+    },200);
+    return()=>clearTimeout(t);
+  },[styles,obMap,alwaysSimFilters]);
 
   const lineSimData=useMemo(()=>{
     if(!lineSimMode||!lineSimSelectedId)return{};
@@ -930,7 +879,6 @@ function PlanningBoardView({styles,colorMode,onEdit,selectMode,selectedId,onSele
     if(!sel)return{};
     const res=buildLineSimilarityForStyle(sel,styles,obMap,lineSimFilters);
     const vals=Object.values(res).filter(v=>!v.isSelf&&v.pct!==null).map(v=>v.pct).sort((a,b)=>b-a);
-    console.log('[LineSim] selected:',sel.styleName,'results:',vals.slice(0,10),'threshold:',lineSimThreshold);
     return res;
   },[lineSimMode,lineSimSelectedId,styles,obMap,lineSimFilters]);
   const {show,hide,move,Tooltip}=useTooltip();
@@ -983,10 +931,10 @@ function PlanningBoardView({styles,colorMode,onEdit,selectMode,selectedId,onSele
 
   return el("div",{style:{position:"relative",height:"100%",display:"flex",flexDirection:"column"}},
     Tooltip,
-    el("div",{style:{flex:1,overflowX:"auto",overflowY:"auto",border:"none",background:"#fff",minHeight:0}},
+    el("div",{style:{flex:1,overflowX:"auto",overflowY:"auto",border:"none",background:"#fff"}},
       el("div",{style:{width:totalW,position:"relative",
         transform:"scale("+boardZoom+")",transformOrigin:"top left",
-        transition:"transform .15s",background:"#fff"}},
+        transition:"transform .15s"}},
 
         // Month header
         el("div",{style:{position:"sticky",top:0,zIndex:30,height:HDR_H/2,display:"flex",background:NAVY,marginLeft:LBL_W}},
@@ -1058,21 +1006,7 @@ function PlanningBoardView({styles,colorMode,onEdit,selectMode,selectedId,onSele
 
                 return el("div",{key:s.id,
                   className:"canvas-block"+(isDimmed?" dimmed":"")+(isSelected?" focused":""),
-                  onClick:lineSimMode&&onLineSimSelect?()=>onLineSimSelect(s.id):(selectMode?()=>onSelectStyle(s.id):()=>{
-                    // On mobile/touch — show block detail popup
-                    if(('ontouchstart' in window)||window.innerWidth<=1024){
-                      if(window.showBlockPopup){
-                        const fmt=d=>d?fmtDate(d):'—';
-                        window.showBlockPopup({
-                          styleName:s.styleName,gmtType:s.gmtType,line:s.line,
-                          plnQty:s.plnQty,dailyQty:s.dailyQty,prodDays:s.prodDays,
-                          ordQty:s.ordQty,eff:s.eff,th:s.th,tgt:s.tgt,
-                          startDate:fmt(s.startDate),endDate:fmt(s.endDate),
-                          delDate:fmt(s.delDate),tgtCutDate:fmt(s.tgtCutDate),
-                        });
-                      }
-                    }
-                  }),
+                  onClick:lineSimMode&&onLineSimSelect?()=>onLineSimSelect(s.id):(selectMode?()=>onSelectStyle(s.id):undefined),
                   onMouseEnter:e=>show(e,
                     `${s.styleName}\nStart: ${fmtDate(s.startDate)}  →  End: ${fmtDate(s.endDate)}\nDel: ${fmtDate(s.delDate)}`
                   ),
@@ -2682,48 +2616,46 @@ function StyleManagerPage({styles,obMap,onExport,page:currentPage}){
 }
 
 function LoadingScreen({status}){
-  const isMob=window.innerWidth<768;
-  return el("div",{style:{
-    width:"100%",height:"100vh",background:NAVY,display:"flex",flexDirection:"column",
+  return el("div",{style:{minHeight:"100vh",background:NAVY,display:"flex",flexDirection:"column",
     alignItems:"center",justifyContent:"center",gap:0,fontFamily:"'DM Sans',sans-serif",
-    position:"fixed",top:0,left:0,right:0,bottom:0,overflow:"hidden",zIndex:9999}},
+    position:"relative",overflow:"hidden"}},
 
-    // Animated background rings — sized for mobile
-    el("div",{style:{position:"absolute",width:isMob?280:600,height:isMob?280:600,borderRadius:"50%",
+    // Animated background rings
+    el("div",{style:{position:"absolute",width:600,height:600,borderRadius:"50%",
       border:"1px solid rgba(224,123,57,.08)",top:"50%",left:"50%",
       transform:"translate(-50%,-50%)",animation:"spin 12s linear infinite"}}),
-    el("div",{style:{position:"absolute",width:isMob?190:400,height:isMob?190:400,borderRadius:"50%",
+    el("div",{style:{position:"absolute",width:400,height:400,borderRadius:"50%",
       border:"1px solid rgba(224,123,57,.12)",top:"50%",left:"50%",
       transform:"translate(-50%,-50%)",animation:"spin 8s linear infinite reverse"}}),
-    el("div",{style:{position:"absolute",width:isMob?110:240,height:isMob?110:240,borderRadius:"50%",
+    el("div",{style:{position:"absolute",width:240,height:240,borderRadius:"50%",
       border:"1px solid rgba(224,123,57,.18)",top:"50%",left:"50%",
       transform:"translate(-50%,-50%)",animation:"spin 5s linear infinite"}}),
 
     // Center content
-    el("div",{style:{display:"flex",flexDirection:"column",alignItems:"center",
-      gap:isMob?18:28,zIndex:1,padding:isMob?20:32,width:"100%",maxWidth:400}},
+    el("div",{style:{display:"flex",flexDirection:"column",alignItems:"center",gap:28,
+      zIndex:1,padding:32}},
 
       // Logos row
-      el("div",{style:{display:"flex",alignItems:"center",gap:16}},
+      el("div",{style:{display:"flex",alignItems:"center",gap:20}},
         el("img",{src:"https://www.star.lk/wp-content/uploads/2024/12/star-logo.svg",
-          alt:"STAR",height:isMob?36:52,style:{filter:"brightness(0) invert(1)"},
+          alt:"STAR",height:52,style:{filter:"brightness(0) invert(1)"},
           onError:ev=>ev.target.style.display="none"}),
-        el("div",{style:{width:1,height:30,background:"rgba(255,255,255,.2)"}}),
-        el("img",{src:"https://www.end2end.lk/images/logo-2.png",alt:"End2End",height:isMob?24:32,
-          style:{background:"rgba(255,255,255,.92)",borderRadius:6,padding:"3px 8px"},
+        el("div",{style:{width:1,height:40,background:"rgba(255,255,255,.2)"}}),
+        el("img",{src:"https://www.end2end.lk/images/logo-2.png",alt:"End2End",height:32,
+          style:{background:"rgba(255,255,255,.92)",borderRadius:6,padding:"3px 10px"},
           onError:ev=>ev.target.style.display="none"})
       ),
 
       // Title
-      el("div",{style:{textAlign:"center",padding:"0 12px"}},
-        el("h1",{style:{color:"#fff",fontSize:isMob?20:26,fontWeight:700,margin:"0 0 8px",letterSpacing:.3}},
+      el("div",{style:{textAlign:"center"}},
+        el("h1",{style:{color:"#fff",fontSize:26,fontWeight:700,margin:"0 0 8px",letterSpacing:.3}},
           "SGL Planning Board Viewer"),
-        el("p",{style:{color:"rgba(255,255,255,.4)",fontSize:isMob?12:13,margin:0}},
+        el("p",{style:{color:"rgba(255,255,255,.4)",fontSize:13,margin:0}},
           "Loading your production plan...")
       ),
 
       // Animated loading bar
-      el("div",{style:{width:"85%",maxWidth:320,display:"flex",flexDirection:"column",gap:10}},
+      el("div",{style:{width:320,display:"flex",flexDirection:"column",gap:10}},
         el("div",{style:{width:"100%",height:5,background:"rgba(255,255,255,.08)",
           borderRadius:10,overflow:"hidden"}},
           el("div",{style:{height:"100%",background:"linear-gradient(90deg,"+ORANGE+",#f59e0b)",
@@ -2736,7 +2668,7 @@ function LoadingScreen({status}){
       // Spinning dots
       el("div",{style:{display:"flex",gap:8,marginTop:4}},
         [0,1,2].map(i=>el("div",{key:i,style:{
-          width:isMob?6:7,height:isMob?6:7,borderRadius:"50%",background:ORANGE,
+          width:7,height:7,borderRadius:"50%",background:ORANGE,
           opacity:.3,animation:"spin 1.2s ease-in-out "+(i*0.2)+"s infinite alternate"}}))
       )
     )
@@ -2750,6 +2682,7 @@ function ViewerApp(){
   const [loadStatus,setLoadStatus]=useState("Connecting to GitHub...");
   const [loadError,setLoadError]=useState(null);
   const [lastUpdated,setLastUpdated]=useState(null);
+  const [refreshing,setRefreshing]=useState(false);
   const [colorMode,setColorMode]=useState("simgroup");
   const [selectMode,setSelectMode]=useState(false);
   const [selectedId,setSelectedId]=useState(null);
@@ -2764,26 +2697,17 @@ function ViewerApp(){
   const [simSubTab,setSimSubTab]=useState("consecutive");
   const [showSimGroupInfo,setShowSimGroupInfo]=useState(false);
   const [boardZoom,setBoardZoom]=useState(1);
-  // Expose zoom control to mobile buttons via window
-  React.useEffect(()=>{
-    window.__viewerZoomIn=()=>setBoardZoom(z=>Math.min(2.0,+(z+0.1).toFixed(1)));
-    window.__viewerZoomOut=()=>setBoardZoom(z=>Math.max(0.4,+(z-0.1).toFixed(1)));
-    return()=>{window.__viewerZoomIn=null;window.__viewerZoomOut=null;};
-  },[setBoardZoom]);
   const [viewPanelOpen,setViewPanelOpen]=useState(false);
-  const [simGroups,setSimGroups]=useState({colorMap:{},groups:[]});
-  const [simGroupsDirty,setSimGroupsDirty]=useState(true);
-
-  useEffect(()=>{setSimGroupsDirty(true);},[styles,obMap]);
-  useEffect(()=>{
-    if(!simGroupsDirty)return;
-    if(colorMode!=="simgroup"&&!showSimGroupInfo)return;
-    const t=setTimeout(()=>{setSimGroups(buildSimGroups(styles,obMap));setSimGroupsDirty(false);},20);
-    return()=>clearTimeout(t);
-  },[colorMode,showSimGroupInfo,simGroupsDirty,styles,obMap]);
+  // Only compute sim groups when colorMode=simgroup to avoid blocking the UI
+  const simGroups=useMemo(()=>{
+    if(colorMode!=="simgroup"&&!showSimGroupInfo)return{colorMap:{},groups:[]};
+    if(!styles.length||!obMap||!Object.keys(obMap).length)return{colorMap:{},groups:[]};
+    return buildSimGroups(styles,obMap);
+  },[colorMode,showSimGroupInfo,styles,obMap]);
 
   async function fetchFromGitHub(showLoading){
     if(showLoading)setLoadStatus("Fetching FR Plan from GitHub...");
+    else setRefreshing(true);
     try{
       // ── FR Plan ───────────────────────────────────────────────────────
       const frRes=await fetch(GH_FR_URL,{
@@ -2793,11 +2717,23 @@ function ViewerApp(){
       if(!frRes.ok)throw new Error("FR Plan fetch failed (HTTP "+frRes.status+"). Token may have expired.");
       const frData=await frRes.json();
       const frB64=frData.content.replace(/[\n\r]/g,"");
-      const frBin=atob(frB64);const frBytes=new Uint8Array(frBin.length);
-      for(let i=0;i<frBin.length;i++)frBytes[i]=frBin.charCodeAt(i);
+      // Yield before heavy decode+parse to keep UI responsive
+      await new Promise(r=>setTimeout(r,0));
+      const frBin=atob(frB64);
+      await new Promise(r=>setTimeout(r,0));
+      const frBytes=new Uint8Array(frBin.length);
+      // Chunk the byte copy to avoid blocking
+      for(let i=0;i<frBin.length;i+=50000){
+        const end=Math.min(i+50000,frBin.length);
+        for(let j=i;j<end;j++)frBytes[j]=frBin.charCodeAt(j);
+        if(i+50000<frBin.length)await new Promise(r=>setTimeout(r,0));
+      }
+      await new Promise(r=>setTimeout(r,0));
       const frWb=XLSX.read(frBytes,{type:"array",cellDates:false,raw:true});
+      await new Promise(r=>setTimeout(r,0));
       const frWs=frWb.Sheets[frWb.SheetNames[0]];
       const parsed=parseFRPlan(frWs);
+      await new Promise(r=>setTimeout(r,0));
 
       // ── OB Data ───────────────────────────────────────────────────────
       if(showLoading)setLoadStatus("Fetching OB Data from GitHub...");
@@ -2813,8 +2749,13 @@ function ViewerApp(){
           // Small file: content embedded in response
           if(obMeta.content&&obMeta.content.replace(/[\n\r]/g,"").length>100){
             const b64=obMeta.content.replace(/[\n\r]/g,"");
+            await new Promise(r=>setTimeout(r,0));
             const bin=atob(b64);obBytes=new Uint8Array(bin.length);
-            for(let i=0;i<bin.length;i++)obBytes[i]=bin.charCodeAt(i);
+            for(let i=0;i<bin.length;i+=50000){
+              const end=Math.min(i+50000,bin.length);
+              for(let j=i;j<end;j++)obBytes[j]=bin.charCodeAt(j);
+              if(i+50000<bin.length)await new Promise(r=>setTimeout(r,0));
+            }
           }else if(obMeta.git_url){
             // Large file: fetch via git blob API
             const blobRes=await fetch(obMeta.git_url,{
@@ -2823,11 +2764,18 @@ function ViewerApp(){
             if(blobRes.ok){
               const blobData=await blobRes.json();
               const b64=blobData.content.replace(/[\n\r]/g,"");
+              await new Promise(r=>setTimeout(r,0));
               const bin=atob(b64);obBytes=new Uint8Array(bin.length);
-              for(let i=0;i<bin.length;i++)obBytes[i]=bin.charCodeAt(i);
+              for(let i=0;i<bin.length;i+=50000){
+                const end=Math.min(i+50000,bin.length);
+                for(let j=i;j<end;j++)obBytes[j]=bin.charCodeAt(j);
+                if(i+50000<bin.length)await new Promise(r=>setTimeout(r,0));
+              }
             }
           }
           if(obBytes){
+            // Parse OB after a tick to avoid blocking
+            await new Promise(r=>setTimeout(r,0));
             const obWb=XLSX.read(obBytes,{type:"array"});
             const obWs=obWb.Sheets[obWb.SheetNames[0]];
             obMapResult=parseOB(obWs);
@@ -2838,15 +2786,21 @@ function ViewerApp(){
         // Continue without OB data — planning board still works
       }
 
+      // Yield to browser before setting state to avoid blocking render
+      if(showLoading)setLoadStatus("Rendering planning board...");
+      await new Promise(r=>setTimeout(r,0));
       setStyles(parsed.styles);
+      await new Promise(r=>setTimeout(r,0));
       setObMap(obMapResult);
       setLastUpdated(new Date());
       setLoadError(null);
+      setRefreshing(false);
       if(showLoading)setPage("board");
     }catch(err){
       console.error("GitHub fetch error:",err);
       // Show last known data if available, otherwise show error screen
       setLoadError(err.message);
+      setRefreshing(false);
       if(styles.length===0)setPage("error");
       else if(showLoading)setPage("board");// show stale data
     }
@@ -2861,6 +2815,7 @@ function ViewerApp(){
   const tabs=[{id:"board",icon:"ti-layout-kanban",label:"Planning Board"},{id:"styles",icon:"ti-shirt",label:"Style Manager"}];
 
   if(page==="loading")return el(LoadingScreen,{status:loadStatus});
+  // Refreshing overlay — shown during background refresh
 
   if(page==="error")return el("div",{style:{minHeight:"100vh",background:NAVY,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}},
     el("i",{className:"ti ti-wifi-off",style:{fontSize:52,color:"rgba(255,255,255,.25)"}}),
@@ -2872,6 +2827,13 @@ function ViewerApp(){
   );
 
   return el("div",{style:{minHeight:"100vh",background:"#F0F2F7",display:"flex",flexDirection:"column"}},
+    refreshing&&el("div",{style:{position:"fixed",top:60,left:"50%",transform:"translateX(-50%)",
+      zIndex:9999,background:"rgba(11,42,74,.92)",color:"#fff",
+      padding:"8px 20px",borderRadius:20,fontSize:12,fontWeight:600,
+      display:"flex",alignItems:"center",gap:8,boxShadow:"0 4px 20px rgba(0,0,0,.3)"}},
+      el("i",{className:"ti ti-refresh",style:{fontSize:14,animation:"spin 1s linear infinite"}}),
+      "Refreshing data..."
+    ),
 
     showSimGroupInfo&&el("div",{onClick:()=>setShowSimGroupInfo(false),
       style:{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",padding:24}},
@@ -3105,95 +3067,6 @@ function ViewerApp(){
 
 ReactDOM.render(el(ErrorBoundary,{},el(ViewerApp,{})),document.getElementById("root"));
 
-
-
-const isMobile=()=>window.innerWidth<=1024||('ontouchstart' in window);
-
-// Floating zoom buttons — hook into React boardZoom state via custom events
-// All mobile enhancements — wrapped in DOMContentLoaded to ensure DOM exists
-window.addEventListener('DOMContentLoaded',function(){
-
-  // Zoom buttons
-  function tryZoom(dir){
-    const fn=dir==='in'?window.__viewerZoomIn:window.__viewerZoomOut;
-    if(typeof fn==='function'){fn();}
-    else{setTimeout(()=>tryZoom(dir),100);}
-  }
-  const zi=document.getElementById('zoomIn');
-  const zo=document.getElementById('zoomOut');
-  if(zi)zi.addEventListener('click',()=>tryZoom('in'));
-  if(zo)zo.addEventListener('click',()=>tryZoom('out'));
-
-  // Block detail popup
-  const popup=document.getElementById('blockPopup');
-  const popupClose=document.getElementById('popupClose');
-  const popupCard=document.getElementById('blockPopupCard');
-
-  function closePopup(){
-    if(popup)popup.classList.remove('open');
-    document.body.style.overflow='';
-  }
-
-  window.showBlockPopup=function(data){
-    if(!popup)return;
-    document.getElementById('popupStyleName').textContent=data.styleName||'';
-    document.getElementById('popupGmtLine').textContent=(data.gmtType||'')+(data.line?' · Line '+data.line:'');
-    const rows=[
-      ['Quantity',data.plnQty?Number(data.plnQty).toLocaleString():'—'],
-      ['Daily Output',data.dailyQty?data.dailyQty+'/day':'—'],
-      ['Production Days',data.prodDays?data.prodDays+' days':'—'],
-      ['Ordered Qty',data.ordQty?Number(data.ordQty).toLocaleString():'—'],
-      ['Efficiency',data.eff?data.eff+'%':'—'],
-      ['TH',data.th||data.tgt||'—'],
-      ['Start Date',data.startDate||'—'],
-      ['End Date',data.endDate||'—'],
-      ['Delivery Date',data.delDate||'—'],
-      ['Target Cut Date',data.tgtCutDate||'—'],
-    ];
-    document.getElementById('popupRows').innerHTML=rows.map(([l,v])=>
-      `<div class="popup-row"><span class="popup-label">${l}</span><span class="popup-value">${v}</span></div>`
-    ).join('');
-    popup.classList.add('open');
-    document.body.style.overflow='hidden';
-  };
-
-  if(popupClose)popupClose.addEventListener('click',closePopup);
-  if(popup)popup.addEventListener('click',e=>{if(e.target===popup)closePopup();});
-
-  // Swipe down to close popup
-  let touchStartY=0;
-  if(popupCard){
-    popupCard.addEventListener('touchstart',e=>{touchStartY=e.touches[0].clientY;},{passive:true});
-    popupCard.addEventListener('touchmove',e=>{
-      if(e.touches[0].clientY-touchStartY>60)closePopup();
-    },{passive:true});
-  }
-
-});// end DOMContentLoaded
-
-// ── Mobile enhancements ────────────────────────────────────────────────────
-// Service worker disabled
-
 </script>
-
-<!-- Mobile floating zoom buttons -->
-<div id="mobileZoom">
-  <button class="zoom-fab" id="zoomIn" title="Zoom In">+</button>
-  <button class="zoom-fab" id="zoomOut" title="Zoom Out">−</button>
-</div>
-
-<!-- Block detail popup -->
-<div id="blockPopup">
-  <div id="blockPopupCard">
-    <div id="blockPopupHandle"></div>
-    <button class="popup-close" id="popupClose">×</button>
-    <div id="popupStyleName" class="popup-title"></div>
-    <div id="popupGmtLine" class="popup-subtitle"></div>
-    <div id="popupRows"></div>
-  </div>
-</div>
-
-// Detect mobile/tablet (in inline script below)
-
 </body>
 </html>
