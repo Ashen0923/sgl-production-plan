@@ -2,9 +2,10 @@
   "name": "Digital Planning Board",
   "short_name": "Planning Board",
   "description": "SGL Digital Production Planning Board — live factory schedule viewer",
-  "start_url": "./SGL_PlanningBoard_Viewer.html",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
-  "orientation": "landscape",
+  "orientation": "any",
   "background_color": "#0B2A4A",
   "theme_color": "#0B2A4A",
   "icons": [
@@ -12,13 +13,19 @@
       "src": "icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
     },
     {
       "src": "icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ]
 }
