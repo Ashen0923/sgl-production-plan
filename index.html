@@ -66,7 +66,7 @@ button:active{transform:scale(.97)}
 <script>
 
 // GH constants defined below in shared code — just add refresh interval and FR URL alias
-const REFRESH_INTERVAL=5*60*1000;
+const REFRESH_INTERVAL=10*60*1000;
 
 window.onerror=function(msg,src,line,col,err){console.error("GLOBAL ERROR:",msg,"\nFile:",src,"Line:",line,"\nError:",err);return false;};
 window.onunhandledrejection=function(e){console.error("UNHANDLED PROMISE:",e.reason);};
@@ -2895,7 +2895,7 @@ function ViewerApp(){
     el("i",{className:"ti ti-wifi-off",style:{fontSize:52,color:"rgba(255,255,255,.25)"}}),
     el("h2",{style:{color:"#fff",fontSize:18,fontWeight:600,margin:0}},"Could not load planning data"),
     el("p",{style:{color:"rgba(255,255,255,.4)",fontSize:13,maxWidth:360,textAlign:"center",lineHeight:1.6}},loadError),
-    el("button",{onClick:()=>{setPage("loading");fetchFromGitHub(true);},
+    el("button",{onClick:()=>{setPage("loading");fetchFromGitHub(false);},
       style:{padding:"10px 28px",background:ORANGE,color:"#fff",border:"none",
         borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",marginTop:8}},"Retry")
   );
