@@ -24,6 +24,13 @@ html,body{width:100%;max-width:100%;overflow-x:hidden}
   .pbv-updated,.pbv-poweredby,.pbv-divider{display:none!important}
   .pbv-btn-label{display:none}
   .pbv-zoom button{padding:9px 13px!important}
+  .pbv-dashboard{flex-direction:column!important}
+  .pbv-dash-sidebar{width:100%!important;display:flex!important;flex-direction:row!important;
+    align-items:center;overflow-x:auto!important;border-right:none!important;
+    border-bottom:1px solid #e2e8f0;padding:8px 10px!important;gap:6px}
+  .pbv-dash-sidebar-label{display:none}
+  .pbv-dash-linebtn{width:auto!important;flex-shrink:0;margin-bottom:0!important;padding:8px 14px!important}
+  .pbv-dash-content{padding:12px!important;min-width:0}
 }
 @media(max-width:430px){
   .pbv-topbar{justify-content:flex-start!important}
@@ -1422,7 +1429,7 @@ function PlanningBoardView({styles,colorMode,onEdit,selectMode,selectedId,onSele
                   className:"canvas-block"+(isDimmed?" dimmed":"")+(isSelected?" focused":""),
                   onClick:lineSimMode&&onLineSimSelect?()=>onLineSimSelect(s.id):
                     (selectMode?()=>onSelectStyle(s.id):
-                    (tier!=="full"?(e)=>{e.stopPropagation();setFocusPopover({id:s.id,x:e.clientX,y:e.clientY});}:undefined)),
+                    ((e)=>{e.stopPropagation();setFocusPopover({id:s.id,x:e.clientX,y:e.clientY});})),
                   onMouseEnter:e=>show(e,
                     `${s.styleName}\nStart: ${fmtDateTime(s.startDate)}  →  End: ${fmtDateTime(s.endDate)}\nDel: ${fmtDate(s.delDate)}`
                   ),
@@ -1431,7 +1438,7 @@ function PlanningBoardView({styles,colorMode,onEdit,selectMode,selectedId,onSele
                   style:{
                     position:"absolute",left,top:4,width,height:zRowH-8,
                     background:color,borderRadius:7,
-                    cursor:lineSimMode?'pointer':selectMode?"pointer":(tier!=="full"?"pointer":"default"),
+                    cursor:lineSimMode?'pointer':selectMode?"pointer":"pointer",
                     opacity:lineSimMode&&lineSimSelectedId?(lsSelected?1:lsPasses?1:0.1):(isDimmed?0.35:1),
                     transition:'opacity .2s',
                     boxShadow:lsSelected?"0 0 0 3px #fff,0 0 0 5px #7c3aed,0 4px 20px rgba(124,58,237,.5)":
@@ -1950,21 +1957,21 @@ function DashboardPage({styles,boardDateFilter}){
     );
   }
 
-  return el("div",{style:{display:"flex",height:"100%"}},
+  return el("div",{className:"pbv-dashboard",style:{display:"flex",height:"100%"}},
     // Line switcher sidebar
-    el("div",{style:{width:110,flexShrink:0,background:"#f8fafc",borderRight:"1px solid #e2e8f0",
+    el("div",{className:"pbv-dash-sidebar",style:{width:110,flexShrink:0,background:"#f8fafc",borderRight:"1px solid #e2e8f0",
       padding:10,overflowY:"auto"}},
-      el("p",{style:{fontSize:10.5,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",
+      el("p",{className:"pbv-dash-sidebar-label",style:{fontSize:10.5,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",
         margin:"2px 4px 8px"}},"Lines"),
-      allLines.map(l=>el("button",{key:l,onClick:()=>setSelLine(l),
+      allLines.map(l=>el("button",{key:l,className:"pbv-dash-linebtn",onClick:()=>setSelLine(l),
         style:{width:"100%",padding:"9px 8px",marginBottom:3,border:"none",borderRadius:7,cursor:"pointer",
           background:selLine===l?NAVY:"transparent",color:selLine===l?"#fff":"#334155",
           fontSize:12.5,fontWeight:selLine===l?700:400,textAlign:"left"}},"L-"+l)
       )
     ),
     // Main content
-    el("div",{style:{flex:1,padding:20,overflowY:"auto"}},
-      el("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:16}},
+    el("div",{className:"pbv-dash-content",style:{flex:1,padding:20,overflowY:"auto",minWidth:0}},
+      el("div",{className:"pbv-dash-header",style:{display:"flex",alignItems:"center",gap:10,marginBottom:16,flexWrap:"wrap"}},
         el("h2",{style:{margin:0,fontSize:18,color:"#0f172a"}},"Line "+selLine+" Dashboard"),
         boardDateFilter&&el("span",{style:{fontSize:11,background:"#fef3c7",color:"#d97706",
           padding:"3px 9px",borderRadius:20,fontWeight:600}},boardDateFilter.label),
