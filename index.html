@@ -611,7 +611,14 @@ function parseOB(sheet){
 // ─── GitHub ────────────────────────────────────────────────────────────────
 const GH_OWNER="Ashen0923",GH_REPO="sgl-production-plan",GH_FILE="Production_Plan.xlsx";
 const GH_TOKEN=["ghp_6ZnPAl","1X5PFCOBhl","6MmS1Y4Pw6UvGW2aEYrM"].join("");// token
-const GH_URL="https://api.github.com/repos/"+GH_OWNER+"/"+GH_REPO+"/contents/"+GH_FILE;
+// ─── ENVIRONMENT ────────────────────────────────────────────────────────────
+// This is the ONE setting that's different between the Dev, Test, and Live
+// copies of this file — everything else in the code is identical. Change
+// this one line (and only this line) when preparing a Test or Live copy.
+// "dev" | "test" | "live"
+const ENVIRONMENT="live";
+const GH_BRANCH=ENVIRONMENT==="live"?"main":ENVIRONMENT;
+const GH_URL="https://api.github.com/repos/"+GH_OWNER+"/"+GH_REPO+"/contents/"+GH_FILE+"?ref="+GH_BRANCH;
 const GH_FR_URL=GH_URL;// alias for viewer
 const REFRESH_INTERVAL=5*60*1000;// auto-refresh every 5 minutes so the viewer stays current
 
@@ -903,7 +910,7 @@ async function ghPushFile(url,content,message,token){
 }
 
 const GH_OB_FILE="OB_Data.xlsx";
-const GH_OB_URL="https://api.github.com/repos/"+GH_OWNER+"/"+GH_REPO+"/contents/"+GH_OB_FILE;
+const GH_OB_URL="https://api.github.com/repos/"+GH_OWNER+"/"+GH_REPO+"/contents/"+GH_OB_FILE+"?ref="+GH_BRANCH;
 
 async function pushToGitHub(styles,rawFRData,obRawBytes,what,onStatus){
   // what: "fr" | "ob" | "both"
@@ -3102,6 +3109,13 @@ function App(){
           style:{filter:"brightness(0) invert(1)"},onError:ev=>ev.target.style.display="none"}),
         el("div",{style:{width:1,height:26,background:"rgba(255,255,255,.2)"}}),
         el("span",{style:{color:"#fff",fontSize:14,fontWeight:600,letterSpacing:.2}},"Planning Board Editor"),
+        (()=>{
+          const envMap={dev:{c:"#0F766E",bg:"#CCFBF1",label:"DEV"},test:{c:"#B45309",bg:"#FEF3C7",label:"TEST"},live:{c:"#B91C1C",bg:"#FEE2E2",label:"LIVE"}};
+          const m=envMap[ENVIRONMENT]||envMap.dev;
+          return el("span",{title:"This copy reads the '"+GH_BRANCH+"' branch",
+            style:{fontSize:10.5,fontWeight:700,color:m.c,background:m.bg,
+              padding:"3px 10px",borderRadius:20,letterSpacing:.6,marginLeft:2}},m.label);
+        })(),
         loadError&&page==="board"&&el("span",{style:{fontSize:10,color:"#fbbf24",background:"rgba(251,191,36,.1)",
           border:"0.5px solid rgba(251,191,36,.3)",borderRadius:4,padding:"2px 8px",marginLeft:8}},
           "⚠ Showing cached data")
