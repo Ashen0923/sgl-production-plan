@@ -584,6 +584,7 @@ const GH_OWNER="Ashen0923",GH_REPO="sgl-production-plan",GH_FILE="Production_Pla
 // this one line (and only this line) when preparing a Test or Live copy.
 // "dev" | "test" | "live"
 const ENVIRONMENT="live";
+const APP_VERSION=1;
 const GH_BRANCH=ENVIRONMENT==="live"?"main":ENVIRONMENT;
 const GH_TOKEN=["ghp_6ZnPAl","1X5PFCOBhl","6MmS1Y4Pw6UvGW2aEYrM"].join("");// token
 const GH_URL="https://api.github.com/repos/"+GH_OWNER+"/"+GH_REPO+"/contents/"+GH_FILE+"?ref="+GH_BRANCH;
@@ -5368,7 +5369,7 @@ function App(){
           const m=envMap[ENVIRONMENT]||envMap.dev;
           return el("span",{title:"This copy reads and writes the '"+GH_BRANCH+"' branch",
             style:{fontSize:10.5,fontWeight:700,color:m.c,background:m.bg,
-              padding:"3px 10px",borderRadius:20,letterSpacing:.6,marginLeft:2}},m.label);
+              padding:"3px 10px",borderRadius:20,letterSpacing:.6,marginLeft:2}},m.label+(ENVIRONMENT==="live"&&typeof APP_VERSION!=="undefined"?" v"+APP_VERSION:""));
         })()
       ),
       el("div",{style:{display:"flex",alignItems:"center",gap:8}},
