@@ -1,0 +1,3050 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Star Garments — Finishing Manpower Calculator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#0B2A4A;min-height:100vh}
+body{font-family:'DM Sans',system-ui,sans-serif;color:#1a1a2e}
+input,select,textarea{font-family:inherit;color:#1a1a2e;background:#fff;outline:none}
+input:focus,select:focus{border-color:#0B2A4A!important;box-shadow:0 0 0 3px rgba(11,42,74,.08)}
+button{font-family:inherit;transition:all .15s;cursor:pointer}
+button:active{transform:scale(.97)}
+::-webkit-scrollbar{height:5px;width:5px}
+::-webkit-scrollbar-track{background:#eee}
+::-webkit-scrollbar-thumb{background:#bbb;border-radius:3px}
+.fade{animation:fadeIn .25s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+@keyframes progress{from{width:0%}to{width:100%}}
+.pb-block{border-radius:6px;padding:6px 8px;overflow:hidden}
+.canvas-block{position:absolute;border-radius:7px;overflow:visible;user-select:none;transition:box-shadow .15s}
+.resize-handle{position:absolute;right:0;top:0;width:10px;height:100%;cursor:ew-resize;background:rgba(255,255,255,.25);border-radius:0 7px 7px 0;z-index:50}
+.resize-handle:hover{background:rgba(255,255,255,.6)}
+.drop-ghost{position:absolute;border-radius:7px;pointer-events:none;border:2.5px dashed rgba(255,255,255,.7);opacity:.65;z-index:8}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
+.modal{background:#fff;border-radius:16px;padding:26px;min-width:380px;max-width:520px;width:100%;box-shadow:0 24px 64px rgba(0,0,0,.18)}
+.tooltip{position:fixed;background:#0B2A4A;color:#fff;border-radius:8px;padding:8px 12px;font-size:11px;font-family:'DM Mono',monospace;pointer-events:none;z-index:9999;white-space:pre-line;max-width:260px;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,.3)}
+.dimmed{opacity:0.22;transition:opacity .3s}
+.focused{opacity:1;transition:opacity .3s}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+class ErrorBoundary extends React.Component{
+  constructor(p){super(p);this.state={error:null};}
+  static getDerivedStateFromError(e){return{error:e};}
+  componentDidCatch(e,info){console.error("REACT ERROR BOUNDARY:",e,info.componentStack);}
+  render(){
+    if(this.state.error)return React.createElement("div",{style:{padding:20,background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:8,margin:16}},
+      React.createElement("p",{style:{fontWeight:600,color:"#dc2626",marginBottom:8}},"Rendering Error — check console (F12)"),
+      React.createElement("pre",{style:{fontSize:11,color:"#7f1d1d",whiteSpace:"pre-wrap"}},this.state.error.message));
+    return this.props.children;
+  }
+}
+
+const{useState,useRef,useCallback,useEffect,useMemo}=React;
+const el=React.createElement;
+const NAVY="#0B2A4A",ORANGE="#E07B39";
+const COL_W=220,ROW_H=160,HDR_H=72,LBL_W=92;
+const DAYS=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const MONS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+// ─── Colour palettes ────────────────────────────────────────────────────────
+const STYLE_COLORS=["#1D4ED8","#6D28D9","#BE185D","#0F766E","#B45309","#B91C1C",
+  "#4338CA","#047857","#C2410C","#0369A1","#4D7C0F","#7E22CE","#9D174D","#065F46",
+  "#92400E","#0E7490","#1E40AF","#5B21B6","#166534","#1E3A5F"];
+// GMT_COLORS_MAP: ordered list of [exact-or-substring-match, color]
+// Exact GMT TYPE values from SGL_FR_Plan: BLAZER, BLOUSE, CASUAL JACKET, DRESS (GOWN),
+// FORMAL JACKET, LADIES SHIRT, MENS SHIRT, OUTER WEAR COAT, PANT (TROUSER), SHORT, SPECIAL JACKET, VEST
+const GMT_COLORS_MAP=[
+  ["OUTER WEAR COAT","#065F46"],  // dark teal
+  ["FORMAL JACKET",  "#9D174D"],  // rose
+  ["SPECIAL JACKET", "#C2410C"],  // burnt orange
+  ["CASUAL JACKET",  "#B91C1C"],  // red
+  ["LADIES SHIRT",   "#0369A1"],  // ocean blue
+  ["MENS SHIRT",     "#0F766E"],  // teal
+  ["BLAZER",         "#4338CA"],  // indigo
+  ["BLOUSE",         "#1D4ED8"],  // blue
+  ["PANT (TROUSER)", "#6D28D9"],  // purple
+  ["TROUSER",        "#6D28D9"],  // purple (fallback substring)
+  ["PANT",           "#5B21B6"],  // purple-dark
+  ["DRESS (GOWN)",   "#7E22CE"],  // violet
+  ["GOWN",           "#7E22CE"],  // violet (fallback substring)
+  ["DRESS",          "#BE185D"],  // pink
+  ["SHORT",          "#4D7C0F"],  // olive green
+  ["VEST",           "#92400E"],  // amber brown
+  ["JACKET",         "#B91C1C"],  // red (generic jacket fallback)
+  ["SHIRT",          "#047857"],  // green (generic shirt fallback)
+];
+function getGmtColor(gmtType){
+  if(!gmtType)return"#374151";
+  const u=gmtType.toUpperCase().trim();
+  for(const[k,c]of GMT_COLORS_MAP){if(u===k||u.includes(k))return c;}
+  return"#374151";
+}
+const LINE_COLORS=["#2563EB","#7C3AED","#DB2777","#0D9488","#D97706","#DC2626","#4F46E5","#059669","#EA580C"];
+
+// ─── Date helpers ────────────────────────────────────────────────────────────
+
+function useTooltip(){
+  const [tip,setTip]=useState(null);
+  const show=useCallback((e,content)=>{setTip({x:e.clientX+14,y:e.clientY-10,content});},[]);
+  const hide=useCallback(()=>setTip(null),[]);
+  const move=useCallback((e)=>{if(tip)setTip(t=>({...t,x:e.clientX+14,y:e.clientY-10}));},[tip]);
+  const Tooltip=tip?el("div",{className:"tooltip",style:{left:tip.x,top:tip.y}},tip.content):null;
+  return{show,hide,move,Tooltip};
+}
+
+const GMT_COLORS={"OUTER WEAR COAT":"#065F46","FORMAL JACKET":"#9D174D","SPECIAL JACKET":"#C2410C","CASUAL JACKET":"#B91C1C","LADIES SHIRT":"#0369A1","MENS SHIRT":"#0F766E","BLAZER":"#4338CA","BLOUSE":"#1D4ED8","PANT (TROUSER)":"#6D28D9","DRESS (GOWN)":"#7E22CE","SHORT":"#4D7C0F","VEST":"#92400E"};
+const STYLE_PALETTE=["#1D4ED8","#6D28D9","#BE185D","#0F766E","#B45309","#B91C1C","#4338CA","#047857","#C2410C","#0369A1","#4D7C0F","#7E22CE","#9D174D","#065F46","#92400E","#0E7490"];
+const GH_OWNER="Ashen0923",GH_REPO="sgl-production-plan";
+// ─── ENVIRONMENT ────────────────────────────────────────────────────────────
+// This is the ONE setting that's different between the Dev, Test, and Live
+// copies of this file — everything else in the code is identical. Change
+// this one line (and only this line) when preparing a Test or Live copy.
+// "dev" | "test" | "live"
+const ENVIRONMENT="test";
+const GH_BRANCH=ENVIRONMENT==="live"?"main":ENVIRONMENT;
+const GH_FR_FILE="Production_Plan.xlsx",GH_OB_FILE="OB_Data.xlsx";
+const GH_FR_URL="https://api.github.com/repos/"+GH_OWNER+"/"+GH_REPO+"/contents/"+GH_FR_FILE+"?ref="+GH_BRANCH;
+const GH_OB_URL="https://api.github.com/repos/"+GH_OWNER+"/"+GH_REPO+"/contents/"+GH_OB_FILE+"?ref="+GH_BRANCH;
+const GH_TOKEN=["ghp_6ZnPAl","1X5PFCOBhl","6MmS1Y4Pw6UvGW2aEYrM"].join("");// token
+
+const DEFAULT_SMV_CONFIG=[
+  {id:1,name:"SPM",color:"#2563EB",departments:[
+    {id:11,name:"FIN",mcCodes:["LBA","KBH","BTK","NBH","FINHELP","RM/C","AWP","M18WP","NWP","H/S"]},
+    {id:12,name:"MOF",mcCodes:["AHELP"]}
+  ]},
+  {id:2,name:"HELP",color:"#059669",departments:[{id:21,name:"PCK",mcCodes:["FINHELP","HELP"]}]},
+  {id:3,name:"QC",color:"#7C3AED",departments:[{id:31,name:"PCK",mcCodes:["FINQC"]}]}
+];
+const DEFAULT_SETTINGS={hours:10,efficiency:65,absenteeism:6,actualCadre:80};
+const LS_SMV="sgl_mp_smv_v2",LS_SETTINGS="sgl_mp_settings_v2";
+
+function loadLS(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;}}
+function saveLS(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2);}
+function r2(v){return Math.round(v*100)/100;}
+function ds(d){if(!d)return"";const dt=new Date(d);return dt.getFullYear()+"-"+String(dt.getMonth()+1).padStart(2,"0")+"-"+String(dt.getDate()).padStart(2,"0");}
+function fmtDate(d){if(!d)return"—";const dt=new Date(d);return dt.getDate()+" "+["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][dt.getMonth()];}
+function localDate(str){if(!str)return null;const[y,m,d]=str.split("-").map(Number);const dt=new Date(y,m-1,d);dt.setHours(0,0,0,0);return dt;}
+function toD(v){
+  if(v===null||v===undefined||v==="")return null;
+  if(v instanceof Date){
+    const d=new Date(v.getFullYear(),v.getMonth(),v.getDate());
+    d.setHours(0,0,0,0);return d;
+  }
+  if(typeof v==="number"){
+    if(v>40000){
+      // Excel serial number -> local date
+      const d=new Date(Math.round((v-25569)*86400*1000));
+      const dt=new Date(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate());
+      dt.setHours(0,0,0,0);return dt;
+    }
+    return null;
+  }
+  if(typeof v==="string"){
+    const s=v.trim();
+    const iso=s.slice(0,10);
+    if(/^\d{4}-\d{2}-\d{2}$/.test(iso)){
+      const pts=iso.split("-").map(Number);
+      const dt=new Date(pts[0],pts[1]-1,pts[2]);dt.setHours(0,0,0,0);return dt;
+    }
+    const d=new Date(s);
+    if(!isNaN(d)){const dt=new Date(d.getFullYear(),d.getMonth(),d.getDate());dt.setHours(0,0,0,0);return dt;}
+  }
+  return null;
+}
+function getWDs(start,end){
+  if(!start||!end)return 0;
+  let n=0,cur=new Date(start);cur.setHours(0,0,0,0);
+  const e=new Date(end);e.setHours(0,0,0,0);
+  while(cur<=e){if(cur.getDay()!==0)n++;cur.setDate(cur.getDate()+1);}
+  return n;
+}
+function getDates(from,to){
+  const dates=[];let cur=new Date(from);cur.setHours(0,0,0,0);
+  const e=new Date(to);e.setHours(0,0,0,0);
+  while(cur<=e){if(cur.getDay()!==0)dates.push(new Date(cur));cur.setDate(cur.getDate()+1);}
+  return dates;
+}
+function bytesToBase64(bytes){
+  let b64="";const chunk=8192;
+  for(let i=0;i<bytes.length;i+=chunk)b64+=String.fromCharCode.apply(null,bytes.subarray(i,i+chunk));
+  return btoa(b64);
+}
+
+// ── Parse FR Plan (same logic as Planning Board v2) ──────────────────────────
+// ── Date helpers (same as Planning Board v2) ─────────────────────────────────
+function excelSerialToDate(serial){
+  if(!serial&&serial!==0)return null;
+  if(serial instanceof Date){const d=new Date(serial);d.setHours(0,0,0,0);return d;}
+  if(typeof serial==="string"){
+    const n=parseFloat(serial);
+    if(!isNaN(n)&&n>40000)serial=n;
+    else{const d=new Date(serial);d.setHours(0,0,0,0);return isNaN(d)?null:d;}
+  }
+  if(typeof serial==="number"&&serial>40000){
+    // Convert Excel serial to local midnight date (avoid UTC offset issues)
+    const utcMs=Math.round((serial-25569)*86400*1000);
+    const utcDate=new Date(utcMs);
+    // Use local date parts to create a local midnight date
+    const d=new Date(utcDate.getUTCFullYear(),utcDate.getUTCMonth(),utcDate.getUTCDate());
+    d.setHours(0,0,0,0);return d;
+  }
+  return null;
+}
+// ─── Working-hours time helpers (Phase 1: time-precise blocks) ──────────────
+const WORK_START_MIN=7*60;      // 7:00 AM
+const WORK_END_MIN=18*60+30;    // 6:30 PM
+const WORK_SPAN_MIN=WORK_END_MIN-WORK_START_MIN;
+// Parse a "time of day" cell (Excel time serial fraction, JS Date, or string) into minutes since midnight.
+// Returns null if blank/dash/unparseable.
+function parseTimeOfDay(val){
+  if(val===null||val===undefined||val==="")return null;
+  if(val instanceof Date){
+    return val.getHours()*60+val.getMinutes();
+  }
+  if(typeof val==="number"){
+    // Excel time-only cells come through as a fraction of a day (0..1)
+    if(val>=0&&val<1)return Math.round(val*1440);
+    // Full datetime serial (has both date+time) — extract the fractional part
+    if(val>1){
+      const frac=val-Math.floor(val);
+      return Math.round(frac*1440);
+    }
+    return 0;
+  }
+  if(typeof val==="string"){
+    const s=val.trim();
+    if(!s||s==="-")return null;
+    // Try "H:MM AM/PM" or "HH:MM" formats
+    const m=s.match(/^(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?$/);
+    if(m){
+      let h=parseInt(m[1],10);const min=parseInt(m[2],10);
+      const ap=m[3]?m[3].toUpperCase():null;
+      if(ap==="PM"&&h!==12)h+=12;
+      if(ap==="AM"&&h===12)h=0;
+      return h*60+min;
+    }
+    const d=new Date(s);
+    if(!isNaN(d))return d.getHours()*60+d.getMinutes();
+    return null;
+  }
+  return null;
+}
+// Combine a date-only value (from excelSerialToDate, local midnight) with a time-of-day
+// (minutes since midnight, from parseTimeOfDay). Falls back to fallbackMin if time is missing.
+// Result is clamped into the working window [WORK_START_MIN, WORK_END_MIN].
+function combineDateAndTime(dateOnly,timeMinutes,fallbackMin){
+  if(!dateOnly)return null;
+  let mins=(timeMinutes==null)?fallbackMin:timeMinutes;
+  mins=Math.max(WORK_START_MIN,Math.min(WORK_END_MIN,mins));
+  const d=new Date(dateOnly);
+  d.setHours(Math.floor(mins/60),mins%60,0,0);
+  return d;
+}
+// Fractional day-index for a time-precise datetime, given a map of "YYYY-MM-DD" -> integer day index.
+// e.g. 10:32 AM on a day whose index is 3 → 3 + (10:32-7:00)/(18:30-7:00)
+function dateTimeToFracIndex(dt,dateIndexMap){
+  if(!dt)return null;
+  const dayIdx=dateIndexMap[ds(dt)];
+  if(dayIdx==null)return null;
+  const mins=dt.getHours()*60+dt.getMinutes();
+  const clamped=Math.max(WORK_START_MIN,Math.min(WORK_END_MIN,mins));
+  const frac=(clamped-WORK_START_MIN)/WORK_SPAN_MIN;
+  return dayIdx+frac;
+}
+function fmtDateShort(d){if(!d)return"—";return d.getDate()+" "+MONS[d.getMonth()];}
+function fmtTimeOfDay(d){
+  if(!d)return"";
+  let h=d.getHours(),m=d.getMinutes();
+  const ap=h>=12?"PM":"AM";
+  h=h%12;if(h===0)h=12;
+  return h+":"+String(m).padStart(2,"0")+" "+ap;
+}
+function fmtDateTime(d){if(!d)return"—";return fmtDate(d)+", "+fmtTimeOfDay(d);}
+function addDays(d,n){const r=new Date(d);r.setDate(r.getDate()+n);return r;}
+function diffDays(a,b){return Math.round((b-a)/(86400*1000));}
+// Add N working days (Mon-Sat) to a date
+function addWorkingDays(startDate,n){
+  let cur=new Date(startDate);cur.setHours(0,0,0,0);
+  let added=0;
+  while(added<n){
+    cur.setDate(cur.getDate()+1);
+    if(cur.getDay()!==0)added++;// skip Sunday
+  }
+  return cur;
+}
+// Get the date that is exactly N working days after startDate (inclusive of start = day 1)
+function workingDayEnd(startDate,prodDays){
+  // Start date is day 1. We need to go prodDays-1 more working days forward.
+  let cur=new Date(startDate);cur.setHours(0,0,0,0);
+  let count=1;
+  while(count<prodDays){
+    cur.setDate(cur.getDate()+1);
+    if(cur.getDay()!==0)count++;
+  }
+  return cur;
+}
+// Get next working day after a date
+function nextWorkingDay(d){
+  let cur=new Date(d);cur.setHours(0,0,0,0);
+  do{cur.setDate(cur.getDate()+1);}while(cur.getDay()===0);
+  return cur;
+}
+// Split merged block sub-styles proportionally from a new start date on a new line
+function splitMergedProportional(subStyles,newStart,newLine){
+  let cursor=new Date(newStart);cursor.setHours(0,0,0,0);
+  // Skip if cursor is Sunday
+  while(cursor.getDay()===0)cursor.setDate(cursor.getDate()+1);
+  return subStyles.map((sub,i)=>{
+    const days=Math.max(1,sub.prodDays||1);
+    const subStart=new Date(cursor);
+    const subEnd=workingDayEnd(subStart,days);
+    const updated={...sub,
+      line:newLine,
+      startDate:new Date(subStart),
+      endDate:new Date(subEnd),
+      dailyQty:r2((sub.plnQty||0)/days),
+    };
+    // Move cursor to next working day after subEnd
+    cursor=nextWorkingDay(subEnd);
+    return updated;
+  });
+}
+function uid(){return Math.random().toString(36).slice(2)+Date.now().toString(36);}
+function r2(n){return Math.round(n*100)/100;}
+function roundPrdDys(sum){const fl=Math.floor(sum);return(sum-fl)>=0.5?fl+1:fl;}
+
+// ─── Fallbacks ───────────────────────────────────────────────────────────────
+const FALLBACK_FACTORY="STAR GARMENTS (PVT) LIMITED-SGL";
+const FALLBACK_ACCOUNT="00212";
+const FALLBACK_CREATED_BY="admin";
+
+// ─── Parse SGL_FR_Plan.xlsx ──────────────────────────────────────────────────
+function parseOB(sheet){
+  const rawRows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:null,raw:true});
+  if(!rawRows.length)return{};
+  const hdrRaw=rawRows[0].map(h=>String(h||"").trim());
+  function findCol(candidates){
+    for(const c of candidates){
+      const idx=hdrRaw.findIndex(h=>h.toLowerCase()===c.toLowerCase());
+      if(idx>=0)return idx;
+    }
+    for(const c of candidates){
+      const idx=hdrRaw.findIndex(h=>h.toLowerCase().includes(c.toLowerCase()));
+      if(idx>=0)return idx;
+    }
+    return -1;
+  }
+  const C={
+    styleNo:findCol(["Style Number","StyleNumber","Style No","Style_Number"]),
+    desc:findCol(["Description","Desc","Operation"]),
+    mcCode:findCol(["Mc Code","MC Code","McCode","Machine Code","Mc_Code"]),
+    dept:findCol(["Department","Dept"]),
+    smv:findCol(["SMV","Smv"]),
+    gsdsmv:findCol(["GSDSMV","GSD SMV","GsdSmv"]),
+    gmtType:findCol(["Garment Type","GarmentType","GMT Type"]),
+  };
+  const map={};
+  for(let i=1;i<rawRows.length;i++){
+    const row=rawRows[i];
+    if(!row||!row.length)continue;
+    const sn=C.styleNo>=0?String(row[C.styleNo]||"").trim():"";
+    if(!sn||sn==="null")continue;
+    if(!map[sn])map[sn]={smv:0,ops:[],_keys:new Set()};
+    const smvVal=C.smv>=0?parseFloat(row[C.smv])||0:0;
+    if(smvVal>map[sn].smv)map[sn].smv=smvVal;
+    const desc=C.desc>=0?String(row[C.desc]||"").trim():"";
+    if(desc){
+      const op={
+        description:desc,
+        mcCode:C.mcCode>=0?String(row[C.mcCode]||"").trim():"",
+        department:C.dept>=0?String(row[C.dept]||"").trim():"",
+        gsdsmv:C.gsdsmv>=0?parseFloat(row[C.gsdsmv])||0:0,
+      };
+      const key=op.description+"||"+op.mcCode+"||"+op.department+"||"+op.gsdsmv;
+      if(!map[sn]._keys.has(key)){map[sn]._keys.add(key);map[sn].ops.push(op);}
+    }
+  }
+  return map;
+}
+
+// ── Shared UI ─────────────────────────────────────────────────────────────────
+function Card({children,style={}}){return el("div",{style:{background:"#fff",border:"0.5px solid #e2e8f0",borderRadius:12,padding:20,...style}},children);}
+function Btn({onClick,children,style={},disabled=false}){return el("button",{onClick,disabled,style:{padding:"8px 16px",border:"none",borderRadius:7,fontSize:13,fontWeight:500,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.45:1,...style}},children);}
+function NoData(){return el("div",{style:{background:"#fffbeb",border:"0.5px solid #fcd34d",borderRadius:10,padding:16,fontSize:13,color:"#92400e",display:"flex",alignItems:"center",gap:8}},el("i",{className:"ti ti-alert-triangle",style:{fontSize:18}}),"No data loaded. Please upload your FR Plan first.");}
+
+function parseFRPlan(sheet){
+  const rows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:null,raw:true});
+  if(!rows.length)throw new Error("Empty FR Plan sheet");
+  const hdr=rows[0].map(h=>String(h||"").trim());
+  // col() tries exact match then case-insensitive match
+  const col=n=>{
+    let i=hdr.indexOf(n);
+    if(i>=0)return i;
+    const nl=n.toLowerCase();
+    i=hdr.findIndex(h=>h.toLowerCase()===nl);
+    return i;// -1 if not found
+  };
+
+  // colAny() tries multiple alternate names
+  const colAny=(...names)=>{for(const n of names){const i=col(n);if(i>=0)return i;}return -1;};
+  const C={
+    facLine:col("Fac/Line"),acc:col("ACC"),styleNo:col("STYLE-NO"),
+    styleOpt:col("Style# Optional"),gmtType:col("GMT TYPE"),
+    ordQty:col("Ord Qty"),prdDys:col("PRD DYS"),plnQty:col("PLN QTY"),
+    eff:col("Eff %"),tgt:col("TGT"),th:colAny("TH","T/H","T.H"),
+    tgtCut:colAny("TGT CUT","TGT_CUT","TGTCUT","Tgt Cut","TARGET CUT","TGT cut"),
+    st:col("ST"),fi:col("FI"),delDate:colAny("Del Date","DEL DATE","Del date","Delivery Date"),
+    merchant:col("Merchant"),
+    mergeGroup:col("SGL_MergeGroup"),// optional merge tag column
+    prodStartTime:colAny("Production start time","Production Start Time","PRODUCTION START TIME","Prod Start Time","Production Start"),
+    prodEndTime:colAny("Production end time","Production End Time","PRODUCTION END TIME","Prod End Time","Production End")
+  };
+  const hasTimeCols=C.prodStartTime>=0&&C.prodEndTime>=0;
+
+  // Group consecutive rows by STYLE-NO — v2 per-line gap detection
+  const groups=[];
+  let cur=null;
+  let lastKeyByLine={};
+  for(let i=1;i<rows.length;i++){
+    const row=rows[i];
+    const styleNo=String(row[C.styleNo]||"").trim();
+    if(!styleNo||styleNo==="-")continue;
+    const facLine=String(row[C.facLine]||"").trim();
+    if(!facLine)continue;
+    const key=facLine+"||"+styleNo;
+    const acc=String(row[C.acc]||"").trim();
+    const styleOpt=String(row[C.styleOpt]||"").trim();
+    const isSummaryRow=!acc&&!styleOpt;
+    // Use per-line lastKey tracking — global lastKey fails when lines interleave
+    const lineLastKey=lastKeyByLine[facLine]||null;
+    const isGap=!isSummaryRow&&cur&&cur.key===key&&lineLastKey!==null&&lineLastKey!==key;
+    if(!cur||cur.key!==key||isGap){
+      if(cur)groups.push(cur);
+      const mg=C.mergeGroup>=0?String(row[C.mergeGroup]||"").trim():"";
+      cur={key,facLine,styleNo,rows:[],summaryRow:null,mergeGroup:mg||null};
+    }
+    if(!isSummaryRow)lastKeyByLine[facLine]=key;
+    if(isSummaryRow){cur.summaryRow=row;}else{cur.rows.push(row);}
+  }
+  if(cur)groups.push(cur);
+
+  const styleColorMap={};let colorIdx=0;
+
+  const styles=groups.map(g=>{
+    const isSingleEntry=g.rows.length===0;
+    const summaryRow=g.summaryRow||(isSingleEntry?g.rows[0]||null:null);
+    const detailRows=isSingleEntry?[]:g.rows;
+
+    // If no summary row but has detail rows, use last detail row as summary
+    const sRow=summaryRow||(detailRows.length?detailRows[detailRows.length-1]:null);
+    if(!sRow)return null;
+
+    // Line number from Fac/Line
+    const facLine=g.facLine;
+    const lineNum=parseInt(facLine.replace(/\D/g,""))||1;
+
+    // Style name from first detail row's Style# Optional, or single row
+    const firstRow=isSingleEntry?(g.rows[0]||sRow):detailRows[0];
+    // Last detail row (the one immediately above the summary row) supplies the end time
+    const lastRow=isSingleEntry?(g.rows[0]||sRow):detailRows[detailRows.length-1];
+    const styleOptName=firstRow?String(firstRow[C.styleOpt]||"").trim():"";
+    const styleDisplayName=styleOptName||g.styleNo;
+
+    // PRD DYS: sum detail rows (or single row's value)
+    let prdDysSum=0;
+    if(isSingleEntry){
+      prdDysSum=parseFloat(sRow[C.prdDys])||0;
+    }else{
+      detailRows.forEach(r=>{prdDysSum+=parseFloat(r[C.prdDys])||0;});
+    }
+    const prodDays=Math.max(1,roundPrdDys(prdDysSum));
+
+    // From summary row (dates, quantities)
+    const plnQty=parseFloat(sRow[C.plnQty])||0;
+    const ordQty=parseFloat(sRow[C.ordQty])||0;
+    const eff=parseFloat(sRow[C.eff])||0;
+    const tgt=parseFloat(sRow[C.tgt])||0;
+    const th=parseFloat(sRow[C.th])||0;
+    // GMT TYPE: summary row has it blank — read from first detail row (or single row)
+    const gmtSourceRow=firstRow||sRow;
+    const gmtType=String(gmtSourceRow[C.gmtType]||sRow[C.gmtType]||"").trim();
+    const merchant=String(sRow[C.merchant]||"").trim();
+
+    // Time-precise boundaries: date comes from the summary row's ST/FI,
+    // the clock time comes from the first detail row (start) / last detail row (end).
+    // Falls back to a full 7:00–18:30 working day when time columns are absent (e.g. old-format files,
+    // or single-entry styles with no detail rows).
+    const stDateOnly=excelSerialToDate(sRow[C.st]);
+    const fiDateOnly=excelSerialToDate(sRow[C.fi]);
+    const startTimeMin=hasTimeCols&&firstRow?parseTimeOfDay(firstRow[C.prodStartTime]):null;
+    const endTimeMin=hasTimeCols&&lastRow?parseTimeOfDay(lastRow[C.prodEndTime]):null;
+    const startDate=combineDateAndTime(stDateOnly,startTimeMin,WORK_START_MIN);
+    const endDate=combineDateAndTime(fiDateOnly,endTimeMin,WORK_END_MIN);
+    const delDate=excelSerialToDate(sRow[C.delDate]);
+    const _rawTgtCut=sRow[C.tgtCut];
+    const tgtCutDate=excelSerialToDate(_rawTgtCut);
+
+
+    const dailyQty=prodDays>0?r2(plnQty/prodDays):0;
+
+    // Keep the real per-row quantity + time-window "chunks" that make up this style (before
+    // they get combined into the single total above) — this is what lets the Dashboard tab
+    // show a truthful day-by-day quantity spread instead of an invented smooth average.
+    // When a row's own ST/FI + time are usable, that's its real window; otherwise it chains
+    // on from the previous chunk's end, sized by its own PRD DYS (or a proportional fallback).
+    const chunks=[];
+    if(isSingleEntry){
+      chunks.push({qty:plnQty,startDate,endDate});
+    }else{
+      let cursor=new Date(startDate);
+      detailRows.forEach(row=>{
+        const rowQty=parseFloat(row[C.plnQty])||0;
+        const ownSTdate=excelSerialToDate(row[C.st]);
+        const ownFIdate=excelSerialToDate(row[C.fi]);
+        const ownStartMin=hasTimeCols?parseTimeOfDay(row[C.prodStartTime]):null;
+        const ownEndMin=hasTimeCols?parseTimeOfDay(row[C.prodEndTime]):null;
+        let cStart=(ownSTdate&&ownStartMin!=null)?combineDateAndTime(ownSTdate,ownStartMin,WORK_START_MIN):new Date(cursor);
+        let cEnd=(ownFIdate&&ownEndMin!=null)?combineDateAndTime(ownFIdate,ownEndMin,WORK_END_MIN):null;
+        if(!cEnd||cEnd<=cStart){
+          const ownDys=parseFloat(row[C.prdDys])||0;
+          const durMin=ownDys>0?ownDys*WORK_SPAN_MIN:Math.max(1,WORK_SPAN_MIN*(plnQty>0?rowQty/plnQty:1/detailRows.length));
+          cEnd=addWorkMinutes(cStart,Math.max(1,durMin));
+        }
+        chunks.push({qty:rowQty,startDate:cStart,endDate:cEnd});
+        cursor=new Date(cEnd.getTime()+60000);
+        if(cursor.getHours()*60+cursor.getMinutes()>WORK_END_MIN){cursor=nextWorkDay(cursor);cursor.setHours(7,0,0,0);}
+      });
+    }
+
+    if(!styleColorMap[styleDisplayName]){
+      styleColorMap[styleDisplayName]=STYLE_COLORS[colorIdx%STYLE_COLORS.length];
+      colorIdx++;
+    }
+
+    return{
+      id:uid(),
+      styleNo:g.styleNo,
+      styleName:styleDisplayName,
+      gmtType,
+      line:lineNum,
+      startDate,
+      endDate,
+      delDate,
+      tgtCutDate,
+      plnQty,
+      ordQty,
+      eff,
+      tgt,
+      th,
+      prodDays,
+      prdDysSum:r2(prdDysSum),
+      dailyQty,
+      chunks,// real per-row quantity+time windows, for the Dashboard's day-by-day breakdown
+      merchant,
+      styleColor:styleColorMap[styleDisplayName],
+      isSingleEntry,
+      mergeGroup:g.mergeGroup||null,// SGL_MergeGroup tag from Excel
+      // for canvas editing
+      locked:false,
+      notes:"",
+      operations:[],
+      operationsConfirmed:false,
+      isNew:false,
+    };
+  }).filter(Boolean);
+
+  // Attach raw data to each style for faithful GitHub save
+  const styleIdToGroupIdx={};
+  styles.forEach((s,i)=>{if(s)styleIdToGroupIdx[s.id]=i;});
+
+  // Deduplicate by styleNo+line
+  const seen=new Set();
+  const dedupedStyles=styles.filter(s=>{
+    // Use styleNo + line + startDate so same style appearing twice on same line
+    // with different dates are kept as separate blocks (not deduped)
+    const key=s.styleNo+"||"+s.line+"||"+(s.startDate?s.startDate.getTime():0);
+    if(seen.has(key))return false;
+    seen.add(key);return true;
+  });
+
+  // Auto-merge: group styles that share same SGL_MergeGroup tag
+  const mergeTagged=dedupedStyles.filter(s=>s.mergeGroup);
+  const untagged=dedupedStyles.filter(s=>!s.mergeGroup);
+  const mergeGroups={};
+  mergeTagged.forEach(s=>{
+    if(!mergeGroups[s.mergeGroup])mergeGroups[s.mergeGroup]=[];
+    mergeGroups[s.mergeGroup].push(s);
+  });
+  const autoMerged=Object.entries(mergeGroups).map(([mgId,subs])=>{
+    const sorted=[...subs].sort((a,b)=>a.startDate-b.startDate);
+    const mergedId=uid();
+    return{
+      id:mergedId,
+      styleName:sorted.map(s=>s.styleName).join(" + "),
+      gmtType:sorted[0].gmtType,
+      line:sorted[0].line,
+      startDate:new Date(sorted[0].startDate),
+      endDate:new Date(sorted[sorted.length-1].endDate),
+      delDate:sorted[0].delDate,
+      tgtCutDate:sorted[0].tgtCutDate,
+      plnQty:sorted.reduce((a,s)=>a+(s.plnQty||0),0),
+      ordQty:sorted.reduce((a,s)=>a+(s.ordQty||0),0),
+      eff:Math.round(sorted.reduce((a,s)=>a+(s.eff||0),0)/sorted.length),
+      tgt:sorted.reduce((a,s)=>a+(s.tgt||0),0),th:sorted[0].th||0,
+      prodDays:sorted.reduce((a,s)=>a+(s.prodDays||0),0),
+      dailyQty:0,merchant:sorted[0].merchant,
+      styleColor:sorted[0].styleColor,
+      isMerged:true,mergeGroup:mgId,
+      subStyles:sorted.map(s=>({...s})),
+      locked:false,notes:"",operations:[],operationsConfirmed:false,isNew:false,isSingleEntry:false,
+    };
+  });
+  autoMerged.forEach(m=>{m.dailyQty=r2(m.plnQty/Math.max(1,m.prodDays));});
+
+  const finalStyles=[...untagged,...autoMerged];
+
+  // Time-precision buffer: if one style's block ends at the exact same instant the
+  // next style on the same line starts, nudge the next style's start forward 1 minute
+  // so the two blocks don't visually collide at the boundary.
+  if(hasTimeCols){
+    const byLineArr={};
+    finalStyles.forEach(s=>{if(!byLineArr[s.line])byLineArr[s.line]=[];byLineArr[s.line].push(s);});
+    Object.values(byLineArr).forEach(arr=>{
+      arr.sort((a,b)=>a.startDate-b.startDate);
+      for(let i=0;i<arr.length-1;i++){
+        const a=arr[i],b=arr[i+1];
+        if(a.endDate&&b.startDate&&a.endDate.getTime()===b.startDate.getTime()){
+          b.startDate=new Date(a.endDate.getTime()+60*1000);
+        }
+      }
+    });
+  }
+
+  return {styles:finalStyles, rawRows:rows, rawHdr:hdr, colIndices:C, groups};
+}
+
+// ─── Parse OB file ────────────────────────────────────────────────────────────
+function PlanningBoardView({styles,colorMode,onEdit,selectMode,selectedId,onSelectStyle,
+  simMode=false,simFilters={description:true},obMap={},highlightId=null,
+  lineSimMode=false,lineSimFilters={description:true},lineSimThreshold=80,
+  lineSimSelectedId=null,onLineSimSelect=null,alwaysSimFilters={description:true,mcCode:false,gmtType:false},
+  simGroups=null,boardZoom=1,setBoardZoom=null,dateRangeOverride=null,gmtFocus=null}){
+  // Build similarity data if sim mode is on
+  const simData=useMemo(()=>(simMode&&typeof buildLineSimilarities==="function")?buildLineSimilarities(styles,obMap,simFilters):{},[simMode,styles,obMap,simFilters]);
+  // Always-on consecutive similarity data (no color, just labels) — disabled in this app since
+  // it depends on an OB-data comparison function that isn't available/compatible here; every
+  // other Planning Board feature (time precision, zoom, legend, tiers, etc.) is unaffected.
+  const alwaysSimData=useMemo(()=>({}),[]);
+
+  const lineSimData=useMemo(()=>{
+    if(!lineSimMode||!lineSimSelectedId||typeof buildLineSimilarityForStyle!=="function")return{};
+    const sel=styles.find(s=>s.id===lineSimSelectedId);
+    if(!sel)return{};
+    const res=buildLineSimilarityForStyle(sel,styles,obMap,lineSimFilters);
+    const vals=Object.values(res).filter(v=>!v.isSelf&&v.pct!==null).map(v=>v.pct).sort((a,b)=>b-a);
+    console.log('[LineSim] selected:',sel.styleName,'results:',vals.slice(0,10),'threshold:',lineSimThreshold);
+    return res;
+  },[lineSimMode,lineSimSelectedId,styles,obMap,lineSimFilters]);
+  const {show,hide,move,Tooltip}=useTooltip();
+  // Zoom scales actual pixel dimensions (not CSS transform) so sticky headers/labels keep working.
+  const zColW=COL_W*boardZoom, zRowH=ROW_H*boardZoom, zLblW=LBL_W*boardZoom;
+  // Extra header row height reserved for sub-hour time ticks at higher zoom (see TICK_STEP_MIN below).
+  const baseHdrH=HDR_H*boardZoom;
+  const tickRowH=boardZoom>=1.25?18:0;
+  const zHdrH=baseHdrH+tickRowH;
+  // Scale block-content font sizes/padding with zoom too, so text never gets clipped
+  // by the shrinking row height at low zoom — everything shrinks together, in proportion.
+  const fz=n=>Math.max(5,Math.round(n*boardZoom*10)/10);
+  const pd=n=>Math.round(n*boardZoom*10)/10;
+  // Scroll container ref + focused-block popover state (for cursor-anchored zoom & click-to-focus)
+  const scrollRef=useRef(null);
+  const [focusPopover,setFocusPopover]=useState(null); // {id, x, y} — click-to-focus detail popover for small/medium blocks
+
+  // ── Two independent, non-interfering zoom mechanisms ────────────────────────
+  // 1) Ctrl/Cmd + mouse-wheel — anchors to the exact point under the cursor (Premiere-style).
+  //    It resolves its own scroll position immediately, and flags wheelTriggeredRef so the
+  //    button/reset effect below knows to leave it alone.
+  // 2) Toolbar +/− and Reset buttons — anchor to the center of the current viewport instead,
+  //    since there's no cursor position associated with a button click. Handled entirely by
+  //    the useEffect below, independently of the wheel shortcut.
+  const wheelTriggeredRef=useRef(false);
+  const prevZoomRef=useRef(boardZoom);
+
+  const handleWheelZoom=useCallback(e=>{
+    if(!(e.ctrlKey||e.metaKey)||!setBoardZoom)return;
+    e.preventDefault();
+    const el2=scrollRef.current;if(!el2)return;
+    const rect=el2.getBoundingClientRect();
+    const cursorX=e.clientX-rect.left; // px from left edge of the visible scroll viewport
+    const contentX=el2.scrollLeft+cursorX-zLblW; // px from timeline origin (after the sticky label column)
+    const timeUnits=contentX/zColW; // fractional day-index under the cursor, independent of zoom
+    const dir=e.deltaY<0?1.12:1/1.12;
+    wheelTriggeredRef.current=true;
+    setBoardZoom(z=>{
+      const nz=Math.max(.25,Math.min(8,+(z*dir).toFixed(4)));
+      // After React re-renders at the new zoom, restore the same time-under-cursor position.
+      requestAnimationFrame(()=>{
+        const el3=scrollRef.current;if(!el3)return;
+        const newColW=COL_W*nz;
+        el3.scrollLeft=Math.max(0,timeUnits*newColW-cursorX+LBL_W*nz);
+      });
+      return nz;
+    });
+  },[setBoardZoom,zColW,zLblW]);
+
+  // Button/reset-triggered zoom: anchor to the center of the current viewport.
+  // Skipped entirely when the change came from the wheel shortcut above (that already
+  // handled its own, more precise cursor-anchored scroll adjustment) — so the two
+  // mechanisms never fight over scrollLeft.
+  useEffect(()=>{
+    const el2=scrollRef.current;
+    const oldZoom=prevZoomRef.current;
+    if(el2&&oldZoom!==boardZoom){
+      if(!wheelTriggeredRef.current){
+        const rect=el2.getBoundingClientRect();
+        const centerX=rect.width/2;
+        const oldColW=COL_W*oldZoom,oldLblW=LBL_W*oldZoom;
+        const contentX=el2.scrollLeft+centerX-oldLblW;
+        const timeUnits=contentX/oldColW;
+        const newColW=COL_W*boardZoom,newLblW=LBL_W*boardZoom;
+        el2.scrollLeft=Math.max(0,timeUnits*newColW-centerX+newLblW);
+      }
+      wheelTriggeredRef.current=false;
+    }
+    prevZoomRef.current=boardZoom;
+  },[boardZoom]);
+
+  if(!styles.length)return el(NoData,{});
+
+  const allLines=[...new Set(styles.map(s=>s.line))].sort((a,b)=>a-b);
+  let minDate=null,maxDate=null;
+  if(dateRangeOverride&&dateRangeOverride.start&&dateRangeOverride.end){
+    // Clip the visible date range to exactly what was requested (e.g. a Compact View filter),
+    // instead of stretching to fit every style's full extent — a style overlapping the edge of
+    // the requested window can otherwise run far beyond it and make the whole board unnecessarily wide.
+    minDate=dateRangeOverride.start;maxDate=dateRangeOverride.end;
+  }else{
+    styles.forEach(s=>{
+      if(s.startDate&&(!minDate||s.startDate<minDate))minDate=s.startDate;
+      if(s.endDate&&(!maxDate||s.endDate>maxDate))maxDate=s.endDate;
+      if(s.delDate&&(!maxDate||s.delDate>maxDate))maxDate=s.delDate;
+    });
+  }
+  if(!minDate||!maxDate)return el(NoData,{});
+  // Build working dates: Mon–Sat only (exclude Sundays)
+  const allDates=[];
+  let cur=new Date(minDate);cur.setHours(0,0,0,0);
+  const eod=new Date(maxDate);eod.setHours(0,0,0,0);
+  while(cur<=eod){
+    if(cur.getDay()!==0)allDates.push(new Date(cur)); // skip Sunday
+    cur.setDate(cur.getDate()+1);
+  }
+
+  const dateIndex={};allDates.forEach((d,i)=>{dateIndex[ds(d)]=i;});
+
+  function getColor(s){
+    if(colorMode==="garment")return getGmtColor(s.gmtType);
+    if(colorMode==="simgroup"&&simGroups)return simGroups.colorMap[s.id]||"#4B5563";
+    return s.styleColor;
+  }
+
+  // Note: with time-precise start/end (Phase 1), blocks are positioned by exact
+  // fractional time-of-day rather than whole days, and the 1-minute buffer applied
+  // at import time already keeps touching blocks from visually colliding — so the
+  // old whole-day computeVisualDates nudging is no longer needed here.
+
+  // Month groups for header
+  const monthGroups=[];
+  allDates.forEach((d,i)=>{
+    const label=MONS[d.getMonth()]+" "+d.getFullYear();
+    if(!monthGroups.length||monthGroups[monthGroups.length-1].label!==label)
+      monthGroups.push({label,count:0,idx:i});
+    monthGroups[monthGroups.length-1].count++;
+  });
+
+  const totalW=zLblW+allDates.length*zColW;
+
+  // Delivery date line for selected style in select mode
+  const selectedStyle=selectedId?styles.find(s=>s.id===selectedId):null;
+  let delLineX=null;
+  if(selectMode&&selectedStyle&&selectedStyle.delDate){
+    const di=dateIndex[ds(selectedStyle.delDate)];
+    if(di!=null)delLineX=zLblW+di*zColW+zColW/2;
+  }
+
+  return el("div",{style:{position:"relative",height:"100%",display:"flex",flexDirection:"column"}},
+    Tooltip,
+    el("div",{ref:scrollRef,onWheel:handleWheelZoom,className:"board-scroll",
+      style:{flex:1,overflowX:"auto",overflowY:"auto",border:"none",background:"#fff"}},
+      el("div",{style:{width:totalW,position:"relative"}},
+
+        // Month header
+        el("div",{style:{position:"sticky",top:0,zIndex:30,height:baseHdrH/2,display:"flex",background:NAVY,marginLeft:zLblW}},
+          monthGroups.map((m,i)=>el("div",{key:i,style:{width:m.count*zColW,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",borderRight:"1px solid rgba(255,255,255,.1)"}},
+            el("span",{style:{color:"rgba(255,255,255,.9)",fontSize:11,fontWeight:600,fontFamily:"'DM Mono',monospace"}},m.label)
+          ))
+        ),
+
+        // Day header
+        el("div",{style:{position:"sticky",top:baseHdrH/2,zIndex:30,height:baseHdrH/2,display:"flex",background:"#132f4c",marginLeft:zLblW}},
+          allDates.map((d,i)=>el("div",{key:i,style:{width:zColW,flexShrink:0,display:"flex",flexDirection:"column",
+            alignItems:"center",justifyContent:"center",borderRight:"1px solid rgba(255,255,255,.07)",
+            background:d.getDay()===6?"rgba(0,0,0,.18)":"transparent"}},
+            el("span",{style:{color:d.getDay()===6?"rgba(255,255,255,.5)":"rgba(255,255,255,.9)",fontSize:11,fontWeight:600}},d.getDate()),
+            el("span",{style:{color:d.getDay()===6?"rgba(255,255,255,.4)":"rgba(255,255,255,.45)",fontSize:9,fontFamily:"'DM Mono',monospace"}},DAYS[d.getDay()])
+          ))
+        ),
+
+        // Sub-hour time ticks (Premiere-style): shown once zoomed in enough to be legible,
+        // and keep subdividing further the more you zoom in — hourly → 15 min → 5 min.
+        tickRowH>0&&el("div",{style:{position:"sticky",top:baseHdrH,zIndex:29,height:tickRowH,
+          background:"#0c2540",marginLeft:zLblW,borderBottom:"1px solid rgba(255,255,255,.12)",overflow:"hidden"}},
+          (()=>{
+            const stepMin=boardZoom<1.5?60:(boardZoom<5?15:5);
+            // Hour marks (07:00, 08:00...) are always spaced a full 60 minutes apart regardless of
+            // how fine the sub-ticks below them get, so they get their own — always roomier — label
+            // visibility check. Only the finer sub-ticks (15/5-min) hide their labels when cramped,
+            // while still drawing the tick line so the ruler stays continuous.
+            const pxPerHour=60/WORK_SPAN_MIN*zColW;
+            const pxPerTick=stepMin/WORK_SPAN_MIN*zColW;
+            const showHourLabel=pxPerHour>=20;
+            const showSubLabel=pxPerTick>=20;
+            const ticks=[];
+            allDates.forEach((d,di)=>{
+              for(let m=WORK_START_MIN;m<=WORK_END_MIN;m+=stepMin){
+                const frac=(m-WORK_START_MIN)/WORK_SPAN_MIN;
+                const left=di*zColW+frac*zColW;
+                const hh=Math.floor(m/60),mm=m%60;
+                const isHourMark=mm===0;
+                const showLabel=isHourMark?showHourLabel:showSubLabel;
+                ticks.push(el("div",{key:di+"-"+m,style:{position:"absolute",left,top:0,bottom:0,
+                  display:"flex",alignItems:"center",paddingLeft:2,
+                  borderLeft:"1px solid rgba(255,255,255,"+(isHourMark?".28":".15")+")"}},
+                  showLabel&&el("span",{style:{fontSize:7,fontWeight:isHourMark?600:400,
+                    color:"rgba(255,255,255,"+(isHourMark?".8":".5")+")",fontFamily:"'DM Mono',monospace",whiteSpace:"nowrap"}},
+                    String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0"))
+                ));
+              }
+            });
+            return el("div",{style:{position:"relative",width:allDates.length*zColW,height:"100%"}},ticks);
+          })()
+        ),
+
+        // Delivery date line (red vertical line for selected style)
+        delLineX!=null&&el("div",{style:{position:"absolute",top:zHdrH,bottom:0,left:delLineX,width:2,
+          background:"#ef4444",zIndex:25,pointerEvents:"none"},
+          title:"Delivery: "+fmtDate(selectedStyle.delDate)},
+          el("div",{style:{position:"sticky",top:zHdrH+4,background:"#ef4444",color:"#fff",
+            fontSize:9,padding:"2px 4px",borderRadius:3,whiteSpace:"nowrap",fontWeight:600,
+            fontFamily:"'DM Mono',monospace",width:"fit-content",transform:"translateX(-50%)"}},
+            "DEL "+fmtDateShort(selectedStyle.delDate))
+        ),
+
+        // Lines
+        allLines.map((line,li)=>{
+          const lineStyles=styles.filter(s=>s.line===line).sort((a,b)=>a.startDate-b.startDate);
+
+          return el("div",{key:line,style:{display:"flex",borderBottom:"1.5px solid rgba(0,0,0,.32)",minHeight:zRowH}},
+            // Line label
+            el("div",{style:{position:"sticky",left:0,zIndex:20,width:zLblW,flexShrink:0,background:"#fff",
+              borderRight:"1px solid #e8ecf2",display:"flex",alignItems:"center",justifyContent:"center",
+              fontWeight:700,fontSize:13,color:LINE_COLORS[(line-1)%LINE_COLORS.length],
+              fontFamily:"'DM Mono',monospace",boxShadow:"2px 0 8px rgba(0,0,0,.04)"}},
+              "L-"+String(line).padStart(2,"0")
+            ),
+
+            // Grid area
+            el("div",{style:{position:"relative",flex:1,minHeight:zRowH,background:li%2===0?"transparent":"rgba(0,0,0,.012)"}},
+              // Grid lines
+              allDates.map((d,di)=>el("div",{key:di,style:{position:"absolute",top:0,bottom:0,left:di*zColW,width:1,
+                background:d.getDay()===6?"rgba(0,0,0,.55)":"rgba(0,0,0,.42)",pointerEvents:"none"}})),
+
+              // Style blocks
+              lineStyles.map(s=>{
+                if(!s.startDate||!s.endDate)return null;
+                // Clamp to the visible day range first — with a filtered/override date range
+                // (Compact View), a style can genuinely start/end outside the window; it should
+                // be visually truncated at the edge, not silently disappear.
+                const visStart=allDates[0]?new Date(Math.max(s.startDate,new Date(allDates[0]).setHours(7,0,0,0))):s.startDate;
+                const lastIdx=allDates.length-1;
+                const visEnd=allDates[lastIdx]?new Date(Math.min(s.endDate,new Date(allDates[lastIdx]).setHours(18,30,0,0))):s.endDate;
+                if(visEnd<=visStart)return null;
+                // Fractional day-index positions the block by exact time-of-day within
+                // its start/end day (7:00 AM–6:30 PM window), not just whole days.
+                const siFrac=dateTimeToFracIndex(visStart,dateIndex);
+                const eiFrac=dateTimeToFracIndex(visEnd,dateIndex);
+                if(siFrac==null||eiFrac==null)return null;
+                const left=siFrac*zColW+2;
+                const width=Math.max((eiFrac-siFrac)*zColW-4,6);
+                // Responsive content tiers: full detail, condensed, or name+qty only — chosen by
+                // actual rendered pixel width so text is never clipped, just progressively simplified.
+                // Consider BOTH width (how many days wide) and row height (current zoom level)
+                // when picking how much content to show — a block can be many days wide yet still
+                // have very little vertical room at low zoom, and vice versa.
+                const widthTier=width>=150?"full":width>=64?"medium":"small";
+                const heightTier=zRowH>=65?"full":zRowH>=40?"medium":"small";
+                const tierRank={small:0,medium:1,full:2};
+                const tier=tierRank[widthTier]<=tierRank[heightTier]?widthTier:heightTier;
+                const simInfo=simMode?(simData[s.id]||null):null;
+                const baseColor=getColor(s);
+                const color=(simMode&&simInfo&&simInfo.pct!==null)?simColor(simInfo.pct):baseColor;
+                const isSelected=selectMode&&selectedId===s.id;
+                const isGmtDimmed=gmtFocus&&s.gmtType!==gmtFocus;
+                const isDimmed=(selectMode&&selectedId&&selectedId!==s.id)||isGmtDimmed;
+                const isHighlighted=highlightId===s.id;
+                const lsData=lineSimData[s.id];
+                const lsSelected=lineSimMode&&lineSimSelectedId===s.id;
+                const lsPct=lsData?lsData.pct:null;
+                const lsHasOps=lsData?lsData.hasOps:false;
+                const lsPasses=lineSimMode&&lineSimSelectedId&&!lsSelected&&lsHasOps&&lsPct!==null&&lsPct>=lineSimThreshold;
+
+                return el("div",{key:s.id,
+                  className:"canvas-block"+(isDimmed?" dimmed":"")+(isSelected?" focused":""),
+                  onClick:lineSimMode&&onLineSimSelect?()=>onLineSimSelect(s.id):
+                    (selectMode?()=>onSelectStyle(s.id):
+                    (tier!=="full"?(e)=>{e.stopPropagation();setFocusPopover({id:s.id,x:e.clientX,y:e.clientY});}:undefined)),
+                  onMouseEnter:e=>show(e,
+                    `${s.styleName}\nStart: ${fmtDateTime(s.startDate)}  →  End: ${fmtDateTime(s.endDate)}\nDel: ${fmtDate(s.delDate)}`
+                  ),
+                  onMouseLeave:hide,
+                  onMouseMove:move,
+                  style:{
+                    position:"absolute",left,top:4,width,height:zRowH-8,
+                    background:color,borderRadius:7,
+                    cursor:lineSimMode?'pointer':selectMode?"pointer":(tier!=="full"?"pointer":"default"),
+                    opacity:lineSimMode&&lineSimSelectedId?(lsSelected?1:lsPasses?1:0.1):(isDimmed?0.35:1),
+                    transition:'opacity .2s',
+                    boxShadow:lsSelected?"0 0 0 3px #fff,0 0 0 5px #7c3aed,0 4px 20px rgba(124,58,237,.5)":
+                      lsPasses?"0 0 0 2px rgba(255,255,255,.5),0 4px 16px rgba(0,0,0,.25)":
+                      isHighlighted?"0 0 0 3px #fff,0 0 0 5px "+ORANGE+",0 4px 20px rgba(224,123,57,.4)":
+                      isSelected?"0 0 0 2.5px #fff, 0 0 0 4px #ef4444, 0 4px 16px rgba(0,0,0,.25)":"0 2px 8px rgba(0,0,0,.18)",
+                    border:lsSelected?"2px solid #a78bfa":lsPasses?"1px solid rgba(255,255,255,.5)":
+                      isHighlighted?"2px solid "+ORANGE:"1px solid rgba(255,255,255,.2)",
+                    overflow:"hidden",zIndex:lsSelected?6:isSelected?5:2,
+                  }},
+                  lineSimMode&&lineSimSelectedId&&(lsPasses||lsSelected)&&el('div',{style:{
+                    position:'absolute',top:4,right:4,zIndex:10,
+                    background:'rgba(0,0,0,.65)',borderRadius:10,
+                    padding:'2px 7px',display:'flex',alignItems:'center',gap:3}},
+                    lsSelected
+                      ?el('span',{style:{fontSize:9,fontWeight:700,color:'#c4b5fd',fontFamily:"'DM Mono',monospace"}},'SELECTED')
+                      :el('span',{style:{fontSize:9,fontWeight:700,
+                          color:lsPct>=80?'#4ade80':lsPct>=60?'#60a5fa':lsPct>=40?'#fbbf24':'#f87171',
+                          fontFamily:"'DM Mono',monospace"}},lsPct+'%')
+                  ),
+            // Block content — merged vs normal
+                  s.isMerged
+                  // ── MERGED block in planning board ──────────────────────
+                  ? el("div",{style:{height:"100%",display:"flex",flexDirection:"column",overflow:"hidden",
+                      maxWidth:Math.min(width,240)}},
+                      // Header bar
+                      el("div",{style:{padding:pd(3)+"px "+pd(7)+"px",background:"rgba(0,0,0,.3)",flexShrink:0,
+                        display:"flex",alignItems:"center",gap:pd(5),borderBottom:"1px solid rgba(255,255,255,.15)"}},
+                        el("i",{className:"ti ti-arrows-join","aria-hidden":"true",style:{fontSize:fz(9.5),color:"rgba(255,255,255,.7)"}}),
+                        el("span",{style:{fontSize:fz(9.5),color:"rgba(255,255,255,.85)",fontWeight:700,
+                          fontFamily:"'DM Mono',monospace"}},"MERGED ×"+s.subStyles.length),
+                        el("span",{style:{marginLeft:"auto",fontSize:fz(9),color:"rgba(255,255,255,.4)",
+                          fontFamily:"'DM Mono',monospace"}},"scroll ↕")
+                      ),
+                      // Scrollable sub-styles
+                      el("div",{style:{flex:1,overflowY:"auto",padding:pd(2)+"px 0"}},
+                        s.subStyles.map((sub,si)=>el("div",{key:si,style:{
+                          padding:pd(5)+"px "+pd(7)+"px",
+                          borderBottom:si<s.subStyles.length-1?"1px solid rgba(255,255,255,.1)":"none",
+                          background:si%2===0?"transparent":"rgba(0,0,0,.1)"}},
+                          // Sub-style name
+                          el("div",{style:{fontWeight:700,fontSize:fz(11.5),color:"#fff",
+                            whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginBottom:pd(3)}},
+                            sub.styleName),
+                          // Sub-style data grid
+                          el("div",{style:{display:"flex",flexDirection:"column",gap:pd(1)+"px"}},
+                            [["QTY",(sub.plnQty||0).toLocaleString()],
+                             ["Daily",(sub.dailyQty||0)+"/day"],
+                             ["Days",(sub.prodDays||0)+" days"],
+                             ["Ord",(sub.ordQty||0).toLocaleString()],
+                             ["TH",(sub.th||sub.tgt||0)],
+                             ["Eff",(sub.eff||0)+"%"],
+                            ].map(([k,v])=>el("div",{key:k,style:{display:"flex",gap:pd(3),alignItems:"center"}},
+                              el("span",{style:{fontSize:fz(8.5),color:"rgba(255,255,255,.4)",fontFamily:"'DM Mono',monospace"}},k+":"),
+                              el("span",{style:{fontSize:fz(8.5),color:"rgba(255,255,255,.85)",fontWeight:500}},v)
+                            ))
+                          ),
+                          // Del date per sub-style
+                          sub.delDate&&el("div",{style:{marginTop:pd(3),background:"rgba(239,68,68,.2)",
+                            borderRadius:2,padding:pd(1)+"px "+pd(4)+"px",display:"inline-block"}},
+                            el("span",{style:{fontSize:fz(8.5),color:"#fca5a5",fontFamily:"'DM Mono',monospace",fontWeight:600}},
+                              "DEL: "+fmtDateShort(sub.delDate))
+                          )
+                        ))
+                      )
+                    )
+                  // ── NORMAL block in planning board — content responds to tier ──
+                  : tier==="small"
+                  ? el("div",{style:{padding:pd(4)+"px "+pd(5)+"px",height:"100%",display:"flex",
+                      flexDirection:"column",justifyContent:"center",overflow:"hidden",
+                      maxWidth:Math.min(width,240)}},
+                      el("p",{style:{margin:0,fontWeight:700,fontSize:fz(11.5),color:"#fff",
+                        whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}},s.styleName),
+                      el("span",{style:{fontSize:fz(9),color:"rgba(255,255,255,.8)",fontFamily:"'DM Mono',monospace"}},
+                        (s.plnQty||0).toLocaleString())
+                    )
+                  : tier==="medium"
+                  ? el("div",{style:{padding:pd(5)+"px "+pd(7)+"px",height:"100%",display:"flex",
+                      flexDirection:"column",gap:pd(2),overflow:"hidden",
+                      maxWidth:Math.min(width,240)}},
+                      el("p",{style:{margin:0,fontWeight:700,fontSize:fz(14),color:"#fff",
+                        whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}},s.styleName),
+                      el("div",{style:{marginTop:pd(2),display:"flex",flexDirection:"column",gap:0,flexShrink:0}},
+                        [
+                          ["QTY",(s.plnQty||0).toLocaleString()],
+                          ["Daily",s.dailyQty+"/day"],
+                          ["TH",s.th||s.tgt||"—"],
+                        ].map(([k,v])=>el("div",{key:k,style:{display:"flex",alignItems:"center",gap:pd(3),flexShrink:0}},
+                          el("span",{style:{fontSize:fz(9),color:"rgba(255,255,255,.45)",fontFamily:"'DM Mono',monospace",minWidth:pd(24),flexShrink:0}},k+":"),
+                          el("span",{style:{fontSize:fz(9),color:"#fff",fontWeight:500,fontFamily:"'DM Mono',monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},v)
+                        ))
+                      )
+                    )
+                  : el("div",{style:{padding:pd(6)+"px "+pd(8)+"px",height:"100%",display:"flex",flexDirection:"column",gap:pd(1.5),overflow:"hidden",
+                      maxWidth:Math.min(width,240)}},
+                      // Top section (name, sim note, garment type, data grid) is allowed to shrink/clip
+                      // internally if space is tight — the DEL/CUT chips below it are never sacrificed.
+                      el("div",{style:{flex:1,minHeight:0,overflow:"hidden",display:"flex",flexDirection:"column",gap:pd(1.5)}},
+                        el("div",{style:{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:pd(4),flexShrink:0,lineHeight:1.1}},
+                          el("p",{style:{margin:0,fontWeight:700,fontSize:fz(17),color:"#fff",lineHeight:1.1,
+                            whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",flex:1}},s.styleName),
+                          s.isSingleEntry&&el("span",{style:{fontSize:fz(9.5),background:"rgba(255,255,255,.25)",color:"#fff",
+                            borderRadius:3,padding:pd(1)+"px "+pd(4)+"px",flexShrink:0,whiteSpace:"nowrap",lineHeight:1.1}},"1-row")
+                        ),
+                        // Always-on consecutive sim (no color, just label)
+                        el("div",{style:{flexShrink:0,lineHeight:1.1}},
+                          (()=>{
+                            const ai=alwaysSimData[s.id];
+                            if(!ai)return null;
+                            if(ai.first)return el("span",{style:{fontSize:fz(9),color:"rgba(255,255,255,.4)",fontStyle:"italic"}},"First style");
+                            if(ai.pct===null)return el("span",{style:{fontSize:fz(9),color:"rgba(255,255,255,.3)",fontStyle:"italic"}},"No ops data");
+                            const prevStyle=styles.find(ps=>ps.line===s.line&&ps.id!==s.id&&ps.endDate<=s.startDate);
+                            const prevName=ai.prevStyleName||"prev";
+                            // With Check Similarities ON → colorful; without → plain
+                            return el("span",{style:{fontSize:fz(9),
+                              color:simMode&&simInfo&&simInfo.pct!==null
+                                ?(simInfo.pct>=80?"#4ade80":simInfo.pct>=60?"#60a5fa":simInfo.pct>=40?"#fbbf24":"#ef4444")
+                                :"rgba(255,255,255,.55)",
+                              background:"rgba(0,0,0,.25)",borderRadius:3,padding:pd(1)+"px "+pd(5)+"px",
+                              fontFamily:"'DM Mono',monospace",fontWeight:500}},
+                              ai.pct+"% sim to "+prevName);
+                          })()
+                        ),
+                        el("p",{style:{margin:0,fontSize:fz(11.5),color:"rgba(255,255,255,.75)",flexShrink:0,lineHeight:1.1,
+                          whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}},s.gmtType),
+                        el("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0,flexShrink:0}},
+                          [
+                            ["QTY",(s.plnQty||0).toLocaleString()+" | "+s.prodDays+"d"],
+                            ["Daily",s.dailyQty+"/day"],
+                            ["Ord",(s.ordQty||0).toLocaleString()],
+                            ["TH",s.th||s.tgt||"—"],
+                            ["Eff",s.eff+"%"],
+                          ].map(([k,v])=>el("div",{key:k,style:{display:"flex",alignItems:"center",gap:pd(3),flexShrink:0,lineHeight:1.1}},
+                            el("span",{style:{fontSize:fz(9),color:"rgba(255,255,255,.45)",fontFamily:"'DM Mono',monospace",minWidth:pd(24),flexShrink:0}},k+":"),
+                            el("span",{style:{fontSize:fz(9),color:"#fff",fontWeight:500,fontFamily:"'DM Mono',monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},v)
+                          ))
+                        )
+                      ),
+                      // DEL + CUT side by side — always reserved space, never clipped by the section above.
+                      el("div",{style:{display:"flex",gap:pd(3),flexWrap:"wrap",flexShrink:0}},
+                        s.delDate&&el("div",{style:{background:"rgba(239,68,68,.25)",borderRadius:3,padding:pd(0.5)+"px "+pd(4)+"px",lineHeight:1.1}},
+                          el("span",{style:{fontSize:fz(8.5),color:"#fca5a5",fontFamily:"'DM Mono',monospace",fontWeight:600}},
+                            "DEL: "+fmtDateShort(s.delDate))
+                        ),
+                        s.tgtCutDate&&el("div",{style:{background:"rgba(251,191,36,.18)",borderRadius:3,padding:pd(0.5)+"px "+pd(4)+"px",lineHeight:1.1}},
+                          el("span",{style:{fontSize:fz(8.5),color:"#fde68a",fontFamily:"'DM Mono',monospace",fontWeight:600}},
+                            "CUT: "+fmtDateShort(s.tgtCutDate))
+                        )
+                      ),
+                    )
+                );
+              })
+            )
+          );
+        })
+      )
+    ),
+
+    // Click-to-focus popover: lets the user read full details of a small/medium block
+    // without changing anything about the block's actual size or position on the timeline.
+    focusPopover&&(()=>{
+      const s=styles.find(st=>st.id===focusPopover.id);
+      if(!s)return null;
+      const PW=260,PH=280,pad=12;
+      const x=Math.min(Math.max(pad,focusPopover.x-PW/2),window.innerWidth-PW-pad);
+      const y=Math.min(Math.max(pad,focusPopover.y+14),window.innerHeight-PH-pad);
+      return el(React.Fragment,{},
+        el("div",{onClick:()=>setFocusPopover(null),
+          style:{position:"fixed",inset:0,zIndex:9990,background:"rgba(0,0,0,.15)"}}),
+        el("div",{style:{position:"fixed",left:x,top:y,width:PW,zIndex:9991,
+          background:getColor(s),borderRadius:10,boxShadow:"0 12px 40px rgba(0,0,0,.4)",
+          border:"1px solid rgba(255,255,255,.25)",overflow:"hidden"}},
+          el("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",
+            padding:"8px 12px",background:"rgba(0,0,0,.25)"}},
+            el("span",{style:{fontWeight:700,fontSize:13,color:"#fff",overflow:"hidden",
+              textOverflow:"ellipsis",whiteSpace:"nowrap"}},s.styleName),
+            el("button",{onClick:()=>setFocusPopover(null),
+              style:{background:"none",border:"none",color:"rgba(255,255,255,.7)",
+                fontSize:16,cursor:"pointer",lineHeight:1,padding:0,marginLeft:8}},"×")
+          ),
+          el("div",{style:{padding:"10px 12px",display:"flex",flexDirection:"column",gap:4}},
+            (()=>{
+              const ai=alwaysSimData[s.id];
+              if(!ai)return null;
+              if(ai.first)return el("span",{style:{fontSize:9.5,color:"rgba(255,255,255,.5)",fontStyle:"italic"}},"First style");
+              if(ai.pct===null)return el("span",{style:{fontSize:9.5,color:"rgba(255,255,255,.4)",fontStyle:"italic"}},"No ops data");
+              const prevName=ai.prevStyleName||"prev";
+              return el("span",{style:{fontSize:9.5,color:"rgba(255,255,255,.7)",
+                background:"rgba(0,0,0,.25)",borderRadius:3,padding:"2px 6px",display:"inline-block",
+                fontFamily:"'DM Mono',monospace",fontWeight:500,width:"fit-content"}},
+                ai.pct+"% sim to "+prevName);
+            })(),
+            el("p",{style:{margin:0,fontSize:10,color:"rgba(255,255,255,.75)"}},s.gmtType),
+            el("p",{style:{margin:0,fontSize:10,color:"rgba(255,255,255,.6)",
+              fontFamily:"'DM Mono',monospace"}},
+              fmtDateTime(s.startDate)+"  →  "+fmtDateTime(s.endDate)),
+            el("div",{style:{marginTop:4,display:"flex",flexDirection:"column",gap:1}},
+              [
+                ["QTY",(s.plnQty||0).toLocaleString()+" | "+s.prodDays+"d"],
+                ["Daily",s.dailyQty+"/day"],
+                ["Ord",(s.ordQty||0).toLocaleString()],
+                ["TH",s.th||s.tgt||"—"],
+                ["Eff",s.eff+"%"],
+              ].map(([k,v])=>el("div",{key:k,style:{display:"flex",alignItems:"center",gap:6}},
+                el("span",{style:{fontSize:10,color:"rgba(255,255,255,.5)",fontFamily:"'DM Mono',monospace",minWidth:40}},k+":"),
+                el("span",{style:{fontSize:10,color:"#fff",fontWeight:600,fontFamily:"'DM Mono',monospace"}},v)
+              ))
+            ),
+            el("div",{style:{marginTop:6,display:"flex",gap:6,flexWrap:"wrap"}},
+              s.delDate&&el("div",{style:{background:"rgba(239,68,68,.3)",borderRadius:4,padding:"3px 7px"}},
+                el("span",{style:{fontSize:9.5,color:"#fca5a5",fontFamily:"'DM Mono',monospace",fontWeight:600}},
+                  "DEL: "+fmtDateShort(s.delDate))
+              ),
+              s.tgtCutDate&&el("div",{style:{background:"rgba(251,191,36,.22)",borderRadius:4,padding:"3px 7px"}},
+                el("span",{style:{fontSize:9.5,color:"#fde68a",fontFamily:"'DM Mono',monospace",fontWeight:600}},
+                  "CUT: "+fmtDateShort(s.tgtCutDate))
+              )
+            )
+          )
+        )
+      );
+    })()
+  );
+}
+
+// ─── Canvas Editor ────────────────────────────────────────────────────────────
+// ── Auto-Shift helpers ─────────────────────────────────────────────────────
+
+// Next working day after date d (skips Sunday — Mon-Sat are working days)
+function nextWorkDay(d){
+  const n=new Date(d);n.setHours(0,0,0,0);
+  n.setDate(n.getDate()+1);
+  if(n.getDay()===0)n.setDate(n.getDate()+1);
+  return n;
+}
+
+// Duration in calendar days (inclusive) preserving original prodDays
+function getDur(s){
+  if(s.prodDays&&s.prodDays>0)return s.prodDays;
+  if(s.startDate&&s.endDate){
+    const ms=new Date(s.endDate)-new Date(s.startDate);
+    return Math.max(1,Math.round(ms/86400000)+1);
+  }
+  return 1;
+}
+
+// Add N working days to start → returns end date (start = day 1)
+function addWorkDays(start,days){
+  let cur=new Date(start);cur.setHours(0,0,0,0);
+  let added=1;
+  while(added<days){
+    cur.setDate(cur.getDate()+1);
+    if(cur.getDay()!==0)added++;
+  }
+  return cur;
+}
+
+// Repack all blocks on a line in chronological order, no gaps, preserving durations
+// startFrom: the date the first block in the sorted list should start from
+// Only repacks blocks whose startDate >= fromDate (blocks before are left alone)
+function repackLine(allStyles,line,fromDate){
+  const all=allStyles.filter(s=>s.line===line)
+    .sort((a,b)=>new Date(a.startDate)-new Date(b.startDate));
+  if(all.length===0)return allStyles;
+
+  // Split into "before" (untouched) and "after" (to repack)
+  const fd=new Date(fromDate);fd.setHours(0,0,0,0);
+  const before=all.filter(s=>new Date(s.startDate)<fd);
+  const after=all.filter(s=>new Date(s.startDate)>=fd);
+
+  // Cursor starts: day after last "before" block ends, or fromDate
+  let cursor;
+  if(before.length>0){
+    cursor=nextWorkDay(before[before.length-1].endDate);
+  }else{
+    cursor=new Date(fd);
+  }
+
+  const repacked=after.map(s=>{
+    const dur=getDur(s);
+    const ns=new Date(cursor);ns.setHours(0,0,0,0);
+    const ne=addWorkDays(ns,dur);
+    cursor=nextWorkDay(ne);
+    return{...s,startDate:ns,endDate:ne,prodDays:dur,dailyQty:r2(s.plnQty/dur)};
+  });
+
+  const updMap=new Map(repacked.map(s=>[s.id,s]));
+  return allStyles.map(s=>updMap.has(s.id)?updMap.get(s.id):s);
+}
+
+// After removing a block from a line, repack from the gap position
+function autoShiftAfterRemove(allStyles,line,removedStartDate){
+  return repackLine(allStyles,line,removedStartDate);
+}
+
+// After placing/moving a block onto a line, repack from its start date
+function autoShiftLine(allStyles,line,anchorId,anchorStart){
+  // Ensure anchor block has correct start date first
+  const withAnchor=allStyles.map(s=>{
+    if(s.id!==anchorId)return s;
+    const ns=new Date(anchorStart);ns.setHours(0,0,0,0);
+    const dur=getDur(s);
+    const ne=addWorkDays(ns,dur);
+    return{...s,startDate:ns,endDate:ne,prodDays:dur,dailyQty:r2(s.plnQty/dur)};
+  });
+  return repackLine(withAnchor,line,anchorStart);
+}
+
+// ─── Time-precise duration & auto-shift helpers (Canvas Editor Phase 2) ─────
+// Total working-minutes between two datetimes, walking day by day through the
+// 7:00 AM–6:30 PM window and skipping Sundays — the time-aware equivalent of getDur().
+function durationWorkMinutes(startDate,endDate){
+  if(!startDate||!endDate)return WORK_SPAN_MIN;
+  let cur=new Date(startDate);
+  let total=0;
+  let guard=0;
+  while(guard++<400){
+    if(ds(cur)===ds(endDate)){
+      const curMin=cur.getHours()*60+cur.getMinutes();
+      const endMin=endDate.getHours()*60+endDate.getMinutes();
+      total+=Math.max(0,endMin-curMin);
+      break;
+    }
+    const curMin=cur.getHours()*60+cur.getMinutes();
+    total+=Math.max(0,WORK_END_MIN-curMin);
+    cur=nextWorkDay(cur);cur.setHours(7,0,0,0);
+  }
+  return Math.max(1,total);
+}
+// Add N working-minutes to a start datetime, rolling over to 7:00 AM the next
+// working day (skipping Sunday) whenever it would pass 6:30 PM — the time-aware
+// equivalent of addWorkDays().
+function addWorkMinutes(start,minutes){
+  let cur=new Date(start);
+  let remaining=minutes;
+  let guard=0;
+  while(remaining>0&&guard++<400){
+    const curMin=cur.getHours()*60+cur.getMinutes();
+    const availToday=WORK_END_MIN-curMin;
+    if(remaining<=availToday){
+      const target=curMin+remaining;
+      cur.setHours(Math.floor(target/60),target%60,0,0);
+      remaining=0;
+    }else{
+      remaining-=availToday;
+      cur=nextWorkDay(cur);cur.setHours(7,0,0,0);
+    }
+  }
+  return cur;
+}
+// Repack all blocks on a line in chronological order with a strict 1-minute gap,
+// preserving each block's real duration — the time-aware equivalent of repackLine().
+// Only blocks starting at/after fromDateTime get shifted; earlier blocks are untouched.
+function repackLineTime(allStyles,line,fromDateTime){
+  const all=allStyles.filter(s=>s.line===line)
+    .sort((a,b)=>new Date(a.startDate)-new Date(b.startDate));
+  if(all.length===0)return allStyles;
+  const fd=new Date(fromDateTime);
+  const before=all.filter(s=>new Date(s.startDate)<fd);
+  const after=all.filter(s=>new Date(s.startDate)>=fd);
+  let cursor=before.length>0
+    ? new Date(before[before.length-1].endDate.getTime()+60000) // +1 min gap after last "before" block
+    : new Date(fd);
+  // Clamp cursor into the working window in case it starts right at/after 6:30 PM
+  if(cursor.getHours()*60+cursor.getMinutes()>WORK_END_MIN){cursor=nextWorkDay(cursor);cursor.setHours(7,0,0,0);}
+  const repacked=after.map(s=>{
+    const durMin=durationWorkMinutes(s.startDate,s.endDate);
+    const ns=new Date(cursor);
+    const ne=addWorkMinutes(ns,durMin);
+    cursor=new Date(ne.getTime()+60000); // 1-minute gap before the next block
+    if(cursor.getHours()*60+cursor.getMinutes()>WORK_END_MIN){cursor=nextWorkDay(cursor);cursor.setHours(7,0,0,0);}
+    const days=Math.max(1,Math.round((ne-ns)/86400000)+1);
+    return{...s,startDate:ns,endDate:ne,prodDays:days,dailyQty:r2(s.plnQty/Math.max(durMin/WORK_SPAN_MIN,1/24))};
+  });
+  const updMap=new Map(repacked.map(s=>[s.id,s]));
+  return allStyles.map(s=>updMap.has(s.id)?updMap.get(s.id):s);
+}
+// After placing/moving a block onto a line at an exact time, repack everything
+// on that line that comes after it — the time-aware equivalent of autoShiftLine().
+function autoShiftLineTime(allStyles,line,anchorId,anchorStart){
+  return repackLineTime(allStyles,line,anchorStart);
+}
+// After removing/moving a block away from a line, close the gap — the time-aware
+// equivalent of autoShiftAfterRemove().
+function autoShiftAfterRemoveTime(allStyles,line,removedStartDate){
+  return repackLineTime(allStyles,line,removedStartDate);
+}
+
+// Spread a style's real chunks (see parseFRPlan) across calendar days — when a single chunk
+// crosses midnight (like a batch running from 5pm one day to 10am the next), its quantity is
+// split between the two days proportional to the working hours it actually occupies on each.
+// Also tracks the earliest/latest clock time actually worked on each day, for display.
+function dayByDayFromChunks(chunks){
+  const byDay={}; // "YYYY-M-D" -> {qty, from:Date, to:Date}
+  (chunks||[]).forEach(ch=>{
+    if(!ch.startDate||!ch.endDate||!ch.qty)return;
+    const totalMin=durationWorkMinutes(ch.startDate,ch.endDate);
+    if(totalMin<=0)return;
+    let cur=new Date(ch.startDate);
+    let guard=0;
+    while(cur<ch.endDate&&guard++<60){
+      const dayKey=ds(cur);
+      const dayEnd=new Date(cur);dayEnd.setHours(18,30,0,0);
+      const segEnd=ch.endDate<dayEnd?ch.endDate:dayEnd;
+      const segMin=Math.max(0,(segEnd-cur)/60000);
+      const segQty=r2(ch.qty*(segMin/totalMin));
+      if(!byDay[dayKey])byDay[dayKey]={qty:0,from:new Date(cur),to:new Date(segEnd)};
+      byDay[dayKey].qty+=segQty;
+      if(cur<byDay[dayKey].from)byDay[dayKey].from=new Date(cur);
+      if(segEnd>byDay[dayKey].to)byDay[dayKey].to=new Date(segEnd);
+      cur=nextWorkDay(segEnd);cur.setHours(7,0,0,0);
+      if(segEnd>=ch.endDate)break;
+    }
+  });
+  return byDay;
+}
+function SettingsTab({smvConfig,setSmvConfig,settings,setSettings}){
+  const SMV_COLORS=["#2563EB","#059669","#7C3AED","#DC2626","#D97706","#0891B2"];
+  const [newTypeName,setNewTypeName]=useState("");
+  const [newDeptInputs,setNewDeptInputs]=useState({});
+  const [newMcInputs,setNewMcInputs]=useState({});
+  function addSmvType(){
+    const n=newTypeName.trim().toUpperCase();
+    if(!n||smvConfig.find(s=>s.name===n))return;
+    const color=SMV_COLORS[smvConfig.length%SMV_COLORS.length];
+    const ns=[...smvConfig,{id:uid(),name:n,color,departments:[]}];
+    setSmvConfig(ns);saveLS(LS_SMV,ns);setNewTypeName("");
+  }
+  function removeSmvType(id){const ns=smvConfig.filter(s=>s.id!==id);setSmvConfig(ns);saveLS(LS_SMV,ns);}
+  function addDept(stId){
+    const val=(newDeptInputs[stId]||"").trim().toUpperCase();if(!val)return;
+    const ns=smvConfig.map(s=>s.id!==stId?s:{...s,departments:[...s.departments,{id:uid(),name:val,mcCodes:[]}]});
+    setSmvConfig(ns);saveLS(LS_SMV,ns);setNewDeptInputs(p=>({...p,[stId]:""}));
+  }
+  function removeDept(stId,dId){const ns=smvConfig.map(s=>s.id!==stId?s:{...s,departments:s.departments.filter(d=>d.id!==dId)});setSmvConfig(ns);saveLS(LS_SMV,ns);}
+  function addMc(stId,dId){
+    const key=stId+"_"+dId;const val=(newMcInputs[key]||"").trim().toUpperCase();if(!val)return;
+    const ns=smvConfig.map(s=>s.id!==stId?s:{...s,departments:s.departments.map(d=>d.id!==dId?d:{...d,mcCodes:[...d.mcCodes,val]})});
+    setSmvConfig(ns);saveLS(LS_SMV,ns);setNewMcInputs(p=>({...p,[key]:""}));
+  }
+  function removeMc(stId,dId,mc){const ns=smvConfig.map(s=>s.id!==stId?s:{...s,departments:s.departments.map(d=>d.id!==dId?d:{...d,mcCodes:d.mcCodes.filter(c=>c!==mc)})});setSmvConfig(ns);saveLS(LS_SMV,ns);}
+  function updSetting(k,v){const ns={...DEFAULT_SETTINGS,...settings,[k]:v};setSettings(ns);saveLS(LS_SETTINGS,ns);}
+  return el("div",{style:{display:"flex",flexDirection:"column",gap:16}},
+    el(Card,{},
+      el("p",{style:{margin:"0 0 4px",fontWeight:600,fontSize:14,color:"#0f172a"}},"Default Calculation Values"),
+      el("p",{style:{margin:"0 0 16px",fontSize:12,color:"#64748b"}},"Applied to all styles unless overridden in Calculate tab."),
+      el("div",{style:{display:"flex",gap:28,flexWrap:"wrap"}},
+        [["Available Hours / Day","hours","hours",1,24,0.5],
+         ["Default Efficiency","efficiency","%",1,100,1],
+         ["Absenteeism Rate","absenteeism","%",0,50,0.5],
+         ["Actual Cadre (Default)","actualCadre","workers",1,9999,1]
+        ].map(([lbl,key,unit,mn,mx,step])=>
+          el("div",{key},
+            el("label",{style:{display:"block",fontSize:12,color:"#64748b",marginBottom:8}},lbl),
+            el("div",{style:{display:"flex",alignItems:"center",gap:10}},
+              el("input",{type:"number",value:settings[key],min:mn,max:mx,step,
+                onChange:e=>updSetting(key,parseFloat(e.target.value)),
+                style:{width:80,padding:"9px 10px",border:"0.5px solid #cbd5e1",borderRadius:7,fontSize:16,fontWeight:500,textAlign:"center"}}),
+              el("span",{style:{fontSize:13,color:"#94a3b8"}},unit)
+            )
+          )
+        )
+      )
+    ),
+    el(Card,{},
+      el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}},
+        el("div",{},
+          el("p",{style:{margin:"0 0 3px",fontWeight:600,fontSize:14,color:"#0f172a"}},"SMV Type Configuration"),
+          el("p",{style:{margin:0,fontSize:12,color:"#64748b"}},"Define SMV types, departments and machine codes.")
+        ),
+        el("div",{style:{display:"flex",gap:8}},
+          el("input",{value:newTypeName,onChange:e=>setNewTypeName(e.target.value),
+            onKeyDown:e=>{if(e.key==="Enter")addSmvType();},
+            placeholder:"New SMV type...",
+            style:{padding:"7px 12px",border:"0.5px solid #cbd5e1",borderRadius:6,fontSize:13,width:160}}),
+          el(Btn,{onClick:addSmvType,style:{background:NAVY,color:"#fff",padding:"7px 16px",fontSize:12}},
+            el("i",{className:"ti ti-plus",style:{marginRight:5}}),"Add")
+        )
+      ),
+      el("div",{style:{display:"flex",flexDirection:"column",gap:12}},
+        smvConfig.map(st=>
+          el("div",{key:st.id,style:{border:"1.5px solid "+st.color+"40",borderRadius:10,overflow:"hidden"}},
+            el("div",{style:{background:st.color+"18",padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"0.5px solid "+st.color+"30"}},
+              el("div",{style:{display:"flex",alignItems:"center",gap:10}},
+                el("div",{style:{width:14,height:14,borderRadius:3,background:st.color}}),
+                el("span",{style:{fontWeight:700,fontSize:14,color:st.color}},st.name+" SMV"),
+                el("span",{style:{fontSize:11,color:"#64748b"}},st.departments.length+" depts · "+st.departments.reduce((s,d)=>s+d.mcCodes.length,0)+" codes")
+              ),
+              el("button",{onClick:()=>removeSmvType(st.id),
+                style:{background:"#fef2f2",border:"0.5px solid #fca5a5",color:"#dc2626",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontSize:11}},
+                el("i",{className:"ti ti-trash",style:{marginRight:4}}),"Remove")
+            ),
+            el("div",{style:{padding:"12px 16px",display:"flex",flexDirection:"column",gap:10}},
+              st.departments.map(dept=>{
+                const key=st.id+"_"+dept.id;
+                return el("div",{key:dept.id,style:{background:"#f8fafc",borderRadius:8,padding:"10px 14px",border:"0.5px solid #e2e8f0"}},
+                  el("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}},
+                    el("span",{style:{fontWeight:600,fontSize:12,color:"#374151"}},dept.name+" Department"),
+                    el("button",{onClick:()=>removeDept(st.id,dept.id),
+                      style:{background:"none",border:"none",color:"#94a3b8",cursor:"pointer",fontSize:11}},
+                      el("i",{className:"ti ti-x"})," Remove")
+                  ),
+                  el("div",{style:{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}},
+                    dept.mcCodes.map(mc=>
+                      el("div",{key:mc,style:{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 10px 4px 12px",
+                        borderRadius:5,background:st.color+"15",border:"0.5px solid "+st.color+"40",fontFamily:"monospace",fontSize:12,fontWeight:600,color:st.color}},
+                        mc,
+                        el("button",{onClick:()=>removeMc(st.id,dept.id,mc),
+                          style:{background:"none",border:"none",color:st.color,cursor:"pointer",display:"flex",alignItems:"center",opacity:0.6,padding:0}},
+                          el("i",{className:"ti ti-x",style:{fontSize:11}}))
+                      )
+                    )
+                  ),
+                  el("div",{style:{display:"flex",gap:6}},
+                    el("input",{value:newMcInputs[key]||"",
+                      onChange:e=>setNewMcInputs(p=>({...p,[key]:e.target.value})),
+                      onKeyDown:e=>{if(e.key==="Enter")addMc(st.id,dept.id);},
+                      placeholder:"Add code...",
+                      style:{padding:"5px 10px",border:"0.5px solid #cbd5e1",borderRadius:5,fontSize:12,width:120,fontFamily:"monospace"}}),
+                    el("button",{onClick:()=>addMc(st.id,dept.id),
+                      style:{padding:"5px 12px",background:st.color,color:"#fff",border:"none",borderRadius:5,fontSize:11,cursor:"pointer"}},
+                      el("i",{className:"ti ti-plus"}))
+                  )
+                );
+              }),
+              el("div",{style:{display:"flex",gap:6,marginTop:4}},
+                el("input",{value:newDeptInputs[st.id]||"",
+                  onChange:e=>setNewDeptInputs(p=>({...p,[st.id]:e.target.value})),
+                  onKeyDown:e=>{if(e.key==="Enter")addDept(st.id);},
+                  placeholder:"Add department...",
+                  style:{padding:"6px 10px",border:"0.5px solid #cbd5e1",borderRadius:6,fontSize:12,width:150}}),
+                el("button",{onClick:()=>addDept(st.id),
+                  style:{padding:"6px 12px",background:NAVY,color:"#fff",border:"none",borderRadius:6,fontSize:11,cursor:"pointer"}},
+                  el("i",{className:"ti ti-plus",style:{marginRight:4}}),"Add Dept")
+              )
+            )
+          )
+        ),
+      )
+    )
+  );
+}
+
+// ── Style Manager Tab ─────────────────────────────────────────────────────────
+function StyleManagerTab({styles,obMap,smvConfig,opSelections,setOpSelections}){
+  const [styleSearch,setStyleSearch]=useState("");
+  const [gmtFilter,setGmtFilter]=useState("All");
+  const [lineFilter,setLineFilter]=useState("All");
+  const [opsFilter,setOpsFilter]=useState("all");
+  const [dateFrom,setDateFrom]=useState("");
+  const [dateTo,setDateTo]=useState("");
+  const [showSuggestions,setShowSuggestions]=useState(false);
+  const [expanded,setExpanded]=useState({});
+
+  const allLines=[...new Set(styles.map(s=>s.line))].sort((a,b)=>a-b);
+
+  // Build MC code -> SMV type map from smvConfig
+  const mcToSmv=useMemo(()=>{
+    const map={};
+    smvConfig.forEach(st=>st.departments.forEach(d=>d.mcCodes.forEach(mc=>{map[mc]=st.name;})));
+    return map;
+  },[smvConfig]);
+
+  // When smvConfig changes, drop auto-assigned selections so getOpSel re-derives from fresh mcToSmv
+  // Also clear user-overridden ops whose smvType no longer exists in smvConfig
+  useEffect(()=>{
+    const validSmvTypes=new Set(smvConfig.map(st=>st.name));
+    setOpSelections(prev=>{
+      const updated={};
+      Object.entries(prev).forEach(([styleId,sel])=>{
+        const kept={};
+        Object.entries(sel).forEach(([i,opSel])=>{
+          if(opSel._userOverride&&validSmvTypes.has(opSel.smvType)){
+            kept[i]=opSel;// keep only if SMV type still exists
+          }
+          // auto-assigned and overrides with deleted type are dropped
+        });
+        if(Object.keys(kept).length>0)updated[styleId]=kept;
+      });
+      return updated;
+    });
+  },[mcToSmv,smvConfig]);
+
+  function hasObs(s){const ob=obMap[s.styleName];return ob&&ob.ops&&ob.ops.length>0;}
+
+  // Get or init operation selections for a style
+  function getOpSel(s){
+    if(opSelections[s.id])return opSelections[s.id];
+    const ob=obMap[s.styleName];
+    if(!ob||!ob.ops)return{};
+    const sel={};
+    ob.ops.forEach((op,i)=>{
+      const smvType=mcToSmv[op.mcCode]||null;
+      sel[i]={included:!!smvType,smvType:smvType||"",op};
+    });
+    return sel;
+  }
+
+  const filtered=styles.filter(s=>{
+    if(lineFilter!=="All"&&String(s.line)!==String(lineFilter))return false;
+    if(opsFilter==="has"&&!hasObs(s))return false;
+    if(opsFilter==="missing"&&hasObs(s))return false;
+    if(styleSearch&&!s.styleName.toLowerCase().includes(styleSearch.toLowerCase()))return false;
+    if(gmtFilter!=="All"&&s.gmtType!==gmtFilter)return false;
+    if(dateFrom){const df=new Date(dateFrom);if(s.endDate&&s.endDate<df)return false;}
+    if(dateTo){const dt=new Date(dateTo);if(s.startDate&&s.startDate>dt)return false;}
+    return true;
+  });
+
+  const allGmtTypes=["All",...new Set(styles.map(s=>s.gmtType).filter(Boolean))].sort();
+  const suggestions=styleSearch.length>=1
+    ?styles.map(s=>s.styleName).filter((n,i,a)=>a.indexOf(n)===i&&n.toLowerCase().includes(styleSearch.toLowerCase())).slice(0,8)
+    :[];
+  return el("div",{style:{display:"flex",flexDirection:"column",gap:14}},
+    // Summary stats
+    el("div",{style:{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}},
+      [
+        {label:"Total Styles",value:styles.length,icon:"ti-shirt",color:NAVY,bg:"#EEF2F8"},
+        {label:"Have OB Data",value:styles.filter(hasObs).length,icon:"ti-clipboard-check",color:"#0369a1",bg:"#f0f9ff"},
+        {label:"Missing OB Data",value:styles.filter(s=>!hasObs(s)).length,icon:"ti-alert-circle",color:"#dc2626",bg:"#fef2f2"},
+        {label:"Lines",value:allLines.length,icon:"ti-layout-rows",color:"#16a34a",bg:"#f0fdf4"},
+      ].map(({label,value,icon,color,bg})=>
+        el("div",{key:label,style:{background:"#fff",border:"0.5px solid #e2e8f0",borderRadius:12,padding:"16px 18px",display:"flex",alignItems:"center",gap:14}},
+          el("div",{style:{width:40,height:40,borderRadius:10,background:bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}},
+            el("i",{className:"ti "+icon,style:{fontSize:20,color}})),
+          el("div",{},
+            el("div",{style:{fontSize:22,fontWeight:800,color:"#0f172a",lineHeight:1}},value),
+            el("div",{style:{fontSize:12,color:"#64748b",marginTop:3}},label)
+          )
+        )
+      )
+    ),
+    el(Card,{style:{padding:0,overflow:"hidden"}},
+      // Enhanced filter bar
+      el("div",{style:{padding:"14px 18px",background:"#fafafa",borderBottom:"1px solid #f1f5f9",display:"flex",flexDirection:"column",gap:10}},
+        // Row 1: Style Name autocomplete + GMT Type + Line + OB filter
+        el("div",{style:{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-start"}},
+          // Style Name with autocomplete
+          el("div",{style:{flex:"2",minWidth:220,position:"relative"}},
+            el("div",{style:{position:"relative"}},
+              el("i",{className:"ti ti-search",style:{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#94a3b8",fontSize:13,pointerEvents:"none"}}),
+              el("input",{placeholder:"Search style name...",value:styleSearch,
+                onChange:e=>{setStyleSearch(e.target.value);setShowSuggestions(true);},
+                onFocus:()=>setShowSuggestions(true),
+                onBlur:()=>setTimeout(()=>setShowSuggestions(false),150),
+                style:{width:"100%",padding:"8px 12px 8px 32px",border:"0.5px solid #cbd5e1",borderRadius:7,fontSize:13,boxSizing:"border-box"}}),
+              styleSearch&&el("button",{onClick:()=>{setStyleSearch("");setShowSuggestions(false);},
+                style:{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",
+                  background:"none",border:"none",color:"#94a3b8",cursor:"pointer",fontSize:16,lineHeight:1}},"×")
+            ),
+            showSuggestions&&suggestions.length>0&&el("div",{style:{
+              position:"absolute",top:"100%",left:0,right:0,zIndex:100,
+              background:"#fff",border:"0.5px solid #cbd5e1",borderRadius:7,
+              boxShadow:"0 4px 16px rgba(0,0,0,.12)",maxHeight:220,overflowY:"auto",marginTop:2}},
+              suggestions.map(name=>{
+                const lo=name.toLowerCase(),sl=styleSearch.toLowerCase(),idx=lo.indexOf(sl);
+                return el("div",{key:name,
+                  onMouseDown:()=>{setStyleSearch(name);setShowSuggestions(false);},
+                  style:{padding:"8px 14px",cursor:"pointer",fontSize:13,color:"#0f172a",
+                    borderBottom:"0.5px solid #f1f5f9",background:"#fff"},
+                  onMouseEnter:e=>e.currentTarget.style.background="#f0f9ff",
+                  onMouseLeave:e=>e.currentTarget.style.background="#fff"},
+                  el("span",{},name.substring(0,idx)),
+                  el("span",{style:{background:"#bfdbfe",borderRadius:2}},name.substring(idx,idx+styleSearch.length)),
+                  el("span",{},name.substring(idx+styleSearch.length))
+                );
+              })
+            )
+          ),
+          // GMT Type
+          el("select",{value:gmtFilter,onChange:e=>setGmtFilter(e.target.value),
+            style:{flex:"1",minWidth:150,padding:"8px 12px",border:"0.5px solid #cbd5e1",borderRadius:7,fontSize:13,background:"#fff",color:gmtFilter==="All"?"#94a3b8":"#0f172a"}},
+            allGmtTypes.map(g=>el("option",{key:g,value:g},g==="All"?"All Garment Types":g))
+          ),
+          // Line
+          el("select",{value:lineFilter,onChange:e=>setLineFilter(e.target.value),
+            style:{flex:"1",minWidth:120,padding:"8px 12px",border:"0.5px solid #cbd5e1",borderRadius:7,fontSize:13,background:"#fff",color:lineFilter==="All"?"#94a3b8":"#0f172a"}},
+            el("option",{value:"All"},"All Lines"),
+            allLines.map(l=>el("option",{key:l,value:l},"Line "+l))
+          ),
+          // OB filter
+          el("div",{style:{display:"flex",gap:0,borderRadius:7,overflow:"hidden",border:"0.5px solid #cbd5e1",flexShrink:0}},
+            [["all","All"],["has","\u2705 Has Ops"],["missing","\u26a0 Missing"]].map(([v,label])=>
+              el("button",{key:v,onClick:()=>setOpsFilter(v),style:{
+                padding:"8px 12px",border:"none",fontSize:12,fontWeight:600,cursor:"pointer",
+                background:opsFilter===v?NAVY:"#fff",color:opsFilter===v?"#fff":"#64748b",
+                borderRight:v!=="missing"?"0.5px solid #cbd5e1":"none"}},label)
+            )
+          )
+        ),
+        // Row 2: Date range
+        el("div",{style:{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}},
+          el("span",{style:{fontSize:11,fontWeight:600,color:"#94a3b8",flexShrink:0}},"Date Range (optional):"),
+          el("div",{style:{display:"flex",alignItems:"center",gap:6}},
+            el("span",{style:{fontSize:12,color:"#94a3b8"}},"From"),
+            el("input",{type:"date",value:dateFrom,onChange:e=>setDateFrom(e.target.value),
+              style:{padding:"6px 10px",border:"0.5px solid #cbd5e1",borderRadius:7,fontSize:12}})
+          ),
+          el("div",{style:{display:"flex",alignItems:"center",gap:6}},
+            el("span",{style:{fontSize:12,color:"#94a3b8"}},"To"),
+            el("input",{type:"date",value:dateTo,onChange:e=>setDateTo(e.target.value),
+              style:{padding:"6px 10px",border:"0.5px solid #cbd5e1",borderRadius:7,fontSize:12}})
+          ),
+          (dateFrom||dateTo)&&el("button",{onClick:()=>{setDateFrom("");setDateTo("");},
+            style:{fontSize:11,color:"#64748b",background:"none",border:"0.5px solid #cbd5e1",
+              borderRadius:5,padding:"4px 10px",cursor:"pointer"}},"Clear dates"),
+          el("span",{style:{fontSize:11,color:"#94a3b8",marginLeft:"auto"}},filtered.length+" / "+styles.length+" styles")
+        )
+      ),
+      // Style list
+      el("div",{style:{padding:0}},
+        filtered.length===0
+        ?el("div",{style:{padding:"32px",textAlign:"center",color:"#94a3b8",fontSize:13}},"No styles match.")
+        :filtered.map(s=>{
+          const ob=obMap[s.styleName];
+          const hasOp=ob&&ob.ops&&ob.ops.length>0;
+          const isExp=!!expanded[s.id];
+          const sel=getOpSel(s);
+          return el("div",{key:s.id,style:{borderBottom:"0.5px solid #f1f5f9"}},
+            // Style row header
+            el("div",{onClick:()=>setExpanded(p=>({...p,[s.id]:!p[s.id]})),
+              style:{padding:"12px 18px",display:"flex",alignItems:"center",gap:12,cursor:"pointer",
+                background:isExp?"#f0f9ff":"#fff"}},
+              el("div",{style:{width:10,height:10,borderRadius:"50%",background:s.styleColor||"#4B5563",flexShrink:0}}),
+              el("div",{style:{flex:1,minWidth:0}},
+                el("div",{style:{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:4}},
+                  el("span",{style:{fontWeight:700,fontSize:13,color:"#0f172a"}},s.styleName),
+                  !hasOp&&el("span",{style:{fontSize:10,color:"#92400e",background:"#fef3c7",padding:"2px 7px",borderRadius:20,border:"0.5px solid #fde68a"}},"No operations"),
+                ),
+                el("div",{style:{display:"flex",gap:12,fontSize:11,color:"#64748b",flexWrap:"wrap"}},
+                  el("span",{},"Line "+s.line),
+                  el("span",{},s.gmtType),
+                  el("span",{},(s.plnQty||0).toLocaleString()+" pcs"),
+                  el("span",{},fmtDate(s.startDate)+" → "+fmtDate(s.endDate)),
+                  s.delDate&&el("span",{style:{color:"#dc2626",fontWeight:500}},"Del: "+fmtDate(s.delDate))
+                )
+              ),
+              hasOp&&el("span",{style:{fontSize:11,fontWeight:600,color:NAVY,flexShrink:0}},ob.ops.length+" ops"),
+              el("div",{style:{width:24,height:24,borderRadius:"50%",background:isExp?NAVY:"#f1f5f9",
+                display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}},
+                el("i",{className:"ti "+(isExp?"ti-chevron-up":"ti-chevron-down"),style:{fontSize:12,color:isExp?"#fff":"#64748b"}})
+              )
+            ),
+            // Expanded ops panel
+            isExp&&el(OpPanel,{s,ob,hasOp,sel,mcToSmv,smvConfig,setOpSelections,obMap})
+          );
+        })
+      )
+    )
+  );
+}
+
+// Separate component so each style has its own filter state
+function OpPanel({s,ob,hasOp,sel,mcToSmv,smvConfig,setOpSelections,obMap}){
+  const [deptF,setDeptF]=useState("All");
+  const [smvF,setSmvF]=useState("All");
+  const [mcF,setMcF]=useState("");
+
+  if(!hasOp)return el("div",{style:{background:"#f8fafc",borderTop:"0.5px solid #e2e8f0",
+    padding:"16px 18px",color:"#92400e",fontSize:13,display:"flex",alignItems:"center",gap:8}},
+    el("i",{className:"ti ti-alert-circle",style:{fontSize:16}}),
+    "No operations data for this style. Upload OB file and save to GitHub.");
+
+  const allDepts=[...new Set(ob.ops.map(o=>o.department).filter(Boolean))].sort();
+  const allSmvTypes=[...new Set(ob.ops.map(o=>mcToSmv[o.mcCode]).filter(Boolean))].sort();
+
+  const filteredOps=ob.ops.filter((op,i)=>{
+    if(deptF!=="All"&&op.department!==deptF)return false;
+    if(smvF!=="All"&&mcToSmv[op.mcCode]!==smvF)return false;
+    if(mcF&&!op.mcCode.toLowerCase().includes(mcF.toLowerCase()))return false;
+    return true;
+  });
+
+  // Compute live SMV totals per type from current selections
+  const smvTotals=useMemo(()=>{
+    const totals={};
+    smvConfig.forEach(st=>{totals[st.name]={total:0,color:st.color,ops:0};});
+    ob.ops.forEach((op,i)=>{
+      const opSel=sel[i]||{included:!!mcToSmv[op.mcCode],smvType:mcToSmv[op.mcCode]||""};
+      if(opSel.included&&opSel.smvType&&opSel.smvType!==""&&totals[opSel.smvType]!==undefined){
+        totals[opSel.smvType].total+=op.gsdsmv||0;
+        totals[opSel.smvType].ops++;
+      }
+    });
+    return totals;
+  },[sel,ob,smvConfig,mcToSmv]);
+
+  return el("div",{style:{background:"#f8fafc",borderTop:"0.5px solid #e2e8f0"}},
+    // SMV KPI cards — live totals per type
+    el("div",{style:{display:"flex",gap:10,padding:"12px 18px",background:"#fff",
+      borderBottom:"0.5px solid #f1f5f9",flexWrap:"wrap"}},
+      smvConfig.map(st=>{
+        const tot=smvTotals[st.name]||{total:0,ops:0,color:st.color};
+        return el("div",{key:st.name,style:{
+          display:"flex",alignItems:"center",gap:10,padding:"8px 14px",
+          borderRadius:9,border:"1.5px solid "+st.color+"30",
+          background:st.color+"08",flex:"1 1 120px",minWidth:100}},
+          el("div",{style:{width:10,height:10,borderRadius:"50%",background:st.color,flexShrink:0}}),
+          el("div",{},
+            el("div",{style:{fontSize:18,fontWeight:800,color:st.color,lineHeight:1,fontFamily:"monospace"}},
+              tot.total.toFixed(3)),
+            el("div",{style:{fontSize:10,fontWeight:600,color:"#64748b",marginTop:2}},
+              st.name+" GSD SMV"),
+            el("div",{style:{fontSize:9,color:"#94a3b8"}},
+              tot.ops+" ops included")
+          )
+        );
+      })
+    ),
+    // Op filters bar
+    el("div",{style:{display:"flex",gap:8,padding:"10px 18px",background:"#f1f5f9",
+      borderBottom:"0.5px solid #e2e8f0",flexWrap:"wrap",alignItems:"center"}},
+      el("span",{style:{fontSize:11,fontWeight:600,color:"#64748b"}},"Filter:"),
+      el("select",{value:deptF,onChange:e=>setDeptF(e.target.value),
+        style:{padding:"4px 8px",border:"0.5px solid #cbd5e1",borderRadius:5,fontSize:11,background:"#fff",color:"#374151"}},
+        el("option",{value:"All"},"All Depts"),
+        allDepts.map(d=>el("option",{key:d,value:d},d))
+      ),
+      el("select",{value:smvF,onChange:e=>setSmvF(e.target.value),
+        style:{padding:"4px 8px",border:"0.5px solid #cbd5e1",borderRadius:5,fontSize:11,background:"#fff",color:"#374151"}},
+        el("option",{value:"All"},"All SMV Types"),
+        allSmvTypes.map(t=>el("option",{key:t,value:t},t))
+      ),
+      el("input",{value:mcF,onChange:e=>setMcF(e.target.value),placeholder:"MC Code...",
+        style:{padding:"4px 8px",border:"0.5px solid #cbd5e1",borderRadius:5,fontSize:11,
+          background:"#fff",color:"#374151",width:90}}),
+      el("span",{style:{fontSize:11,color:"#94a3b8"}},filteredOps.length+" / "+ob.ops.length+" ops")
+    ),
+    // Ops table header
+    el("div",{style:{display:"grid",gridTemplateColumns:"40px 1fr 80px 80px 70px 100px",
+      padding:"6px 18px",background:"#f1f5f9",fontSize:10,fontWeight:700,color:"#94a3b8",
+      textTransform:"uppercase",letterSpacing:.5,gap:8}},
+      ["Use","Description","MC Code","Dept","GSD SMV","SMV Type"].map(h=>el("span",{key:h},h))
+    ),
+    el("div",{style:{maxHeight:300,overflowY:"auto"}},
+      filteredOps.map((op)=>{
+        const i=ob.ops.indexOf(op);
+        const opSel=sel[i]||{included:!!mcToSmv[op.mcCode],smvType:mcToSmv[op.mcCode]||"",op};
+        return el("div",{key:i,style:{display:"grid",gridTemplateColumns:"40px 1fr 80px 80px 70px 100px",
+          padding:"7px 18px",borderBottom:"0.5px solid #f1f5f9",
+          background:opSel.included?"#f0f9ff":"#fff",alignItems:"center",gap:8}},
+          el("input",{type:"checkbox",checked:opSel.included,
+            onChange:e=>{const ns={...sel,[i]:{...opSel,included:e.target.checked,_userOverride:true}};setOpSelections(p=>({...p,[s.id]:ns}));},
+            style:{cursor:"pointer"}}),
+          el("span",{style:{fontSize:12,color:"#0f172a"}},op.description||"—"),
+          el("span",{style:{fontSize:11,color:"#475569",fontFamily:"monospace"}},op.mcCode||"—"),
+          el("span",{style:{fontSize:10,padding:"2px 6px",borderRadius:20,
+            background:op.department==="FIN"?"#dcfce7":op.department==="SEW"?"#dbeafe":op.department==="PCK"?"#fef3c7":"#f3e8ff",
+            color:op.department==="FIN"?"#15803d":op.department==="SEW"?"#1d4ed8":op.department==="PCK"?"#92400e":"#6d28d9",
+            width:"fit-content"}},op.department||"—"),
+          el("span",{style:{fontSize:11,color:"#475569",fontFamily:"monospace",textAlign:"right"}},(op.gsdsmv||0).toFixed(3)),
+          el("select",{value:opSel.smvType,
+            onChange:e=>{const ns={...sel,[i]:{...opSel,smvType:e.target.value,_userOverride:true}};setOpSelections(p=>({...p,[s.id]:ns}));},
+            style:{padding:"3px 6px",border:"0.5px solid "+(opSel.smvType?"#cbd5e1":"#f59e0b"),
+              borderRadius:5,fontSize:11,
+              background:opSel.smvType?"#fff":"#fffbeb",
+              color:opSel.smvType?"#374151":"#92400e"}},
+            el("option",{value:""},"— none —"),
+            smvConfig.map(st=>el("option",{key:st.name,value:st.name},st.name))
+          )
+        );
+      })
+    )
+  );
+
+}
+
+
+// ── Calculate Tab ─────────────────────────────────────────────────────────────
+// ── Manpower Dashboard Component ─────────────────────────────────────────────
+function ManpowerDashboard({results,allLines,settings,activeStyles,fromDate,toDate,ds,r2,NAVY,ORANGE}){
+  const LINE_COLORS=["#2563EB","#7C3AED","#DB2777","#0D9488","#D97706","#DC2626","#4F46E5","#059669","#EA580C"];
+  const cadre=settings.actualCadre||80;
+  const [selectedLines,setSelectedLines]=useState(()=>new Set(allLines.map(String)));
+
+  // Build daily totals
+  const dates=results.dates;
+  const dailyData=dates.map(d=>{
+    const dStr=ds(d);
+    const spmOnly=r2(allLines.reduce((a,l)=>{const r=results.lineRes[l]?.[dStr];return a+(r?r.spmTotal:0);},0));
+    const helpOnly=r2(allLines.reduce((a,l)=>{const r=results.lineRes[l]?.[dStr];return a+(r?r.helpTotal:0);},0));
+    const spm=r2(allLines.reduce((a,l)=>{const r=results.lineRes[l]?.[dStr];return a+(r?r.total:0);},0));
+    const absent=r2(allLines.reduce((a,l)=>{const r=results.lineRes[l]?.[dStr];return a+(r?r.totalWithAbsent:0);},0));
+    const qc=r2(allLines.reduce((a,l)=>{const r=results.lineRes[l]?.[dStr];return a+(r?r.qcTotal:0);},0));
+    return{date:d,dStr,spmOnly,helpOnly,spm,absent,qc};
+  });
+
+  // Peak shortage/surplus
+  const peakShortage=Math.min(...dailyData.filter(d=>d.absent>0).map(d=>r2(cadre-d.absent)));
+  const avgDemand=r2(dailyData.filter(d=>d.absent>0).reduce((a,d)=>a+d.absent,0)/Math.max(1,dailyData.filter(d=>d.absent>0).length));
+  const criticalDays=dailyData.filter(d=>d.absent>cadre).length;
+
+  // SMV type totals across period
+  const totalSpm=r2(dailyData.reduce((a,d)=>a+d.spm,0)/Math.max(1,dailyData.length));
+  const totalQc=r2(dailyData.reduce((a,d)=>a+d.qc,0)/Math.max(1,dailyData.length));
+
+  const fmtD=d=>d.getDate()+" "+["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()];
+  const labels=dates.map(d=>fmtD(d));
+
+  // Chart refs
+  const trendRef=useRef(),stackRef=useRef(),donutRef=useRef(),cadreRef=useRef();
+  const trendChart=useRef(),stackChart=useRef(),donutChart=useRef(),cadreChart=useRef();
+
+  useEffect(()=>{
+    // Destroy existing charts
+    [trendChart,stackChart,donutChart,cadreChart].forEach(r=>{if(r.current){r.current.destroy();r.current=null;}});
+
+    // Chart 1: Daily Trend
+    if(trendRef.current){
+      trendChart.current=new Chart(trendRef.current,{
+        type:"line",
+        data:{labels,datasets:[
+          {label:"SPM M/P",data:dailyData.map(d=>d.spmOnly),
+            borderColor:"#2563eb",backgroundColor:"rgba(37,99,235,.06)",tension:.3,fill:true,pointRadius:2,borderWidth:2},
+          {label:"HELP M/P",data:dailyData.map(d=>d.helpOnly),
+            borderColor:"#7c3aed",backgroundColor:"rgba(124,58,237,.06)",tension:.3,fill:true,pointRadius:2,borderWidth:2},
+          {label:"QC M/P",data:dailyData.map(d=>d.qc),
+            borderColor:"#059669",backgroundColor:"transparent",tension:.3,fill:false,
+            borderWidth:2,pointRadius:2},
+          {label:"Actual Cadre",data:dates.map(()=>cadre),
+            borderColor:"#dc2626",borderDash:[6,3],borderWidth:2,
+            pointRadius:0,fill:false},
+        ]},
+        options:{responsive:true,maintainAspectRatio:false,
+          plugins:{legend:{position:"top",labels:{font:{size:11},boxWidth:12}},
+            title:{display:true,text:"Daily Manpower Trend",font:{size:13,weight:"bold"}}},
+          scales:{y:{beginAtZero:true,grid:{color:"rgba(0,0,0,.05)"},ticks:{font:{size:10}}},
+            x:{grid:{display:false},ticks:{font:{size:9},maxRotation:45}}}}
+      });
+    }
+
+    // Chart 2: Stacked by line (filtered)
+    const visibleLines=allLines.filter(l=>selectedLines.has(String(l)));
+    if(stackRef.current){
+      stackChart.current=new Chart(stackRef.current,{
+        type:"bar",
+        data:{labels,datasets:visibleLines.map((l,i)=>({
+          label:"L-"+String(l).padStart(2,"0"),
+          data:dates.map(d=>{const r=results.lineRes[l]?.[ds(d)];return r?r2(r.totalWithAbsent):0;}),
+          backgroundColor:LINE_COLORS[allLines.indexOf(l)%LINE_COLORS.length]+"cc",
+          borderColor:LINE_COLORS[allLines.indexOf(l)%LINE_COLORS.length],borderWidth:0.5,stack:"lines"
+        }))},
+        options:{responsive:true,maintainAspectRatio:false,
+          plugins:{legend:{position:"top",labels:{font:{size:10},boxWidth:10}},
+            title:{display:true,text:"Manpower by Line (incl. absenteeism)",font:{size:13,weight:"bold"}}},
+          scales:{x:{stacked:true,grid:{display:false},ticks:{font:{size:9},maxRotation:45}},
+            y:{stacked:true,beginAtZero:true,grid:{color:"rgba(0,0,0,.05)"},ticks:{font:{size:10}}}}}
+      });
+    }
+
+    // Chart 3: Donut SMV split
+    if(donutRef.current){
+      const avgSpm=r2(dailyData.filter(d=>d.spmOnly>0).reduce((a,d)=>a+d.spmOnly,0)/Math.max(1,dailyData.filter(d=>d.spmOnly>0).length));
+      const avgHelp=r2(dailyData.filter(d=>d.helpOnly>0).reduce((a,d)=>a+d.helpOnly,0)/Math.max(1,dailyData.filter(d=>d.helpOnly>0).length));
+      donutChart.current=new Chart(donutRef.current,{
+        type:"doughnut",
+        data:{labels:["SPM M/P","HELP M/P","QC M/P"],
+          datasets:[{data:[avgSpm,avgHelp,totalQc],
+            backgroundColor:["#2563eb","#7c3aed","#059669"],
+            borderWidth:0,hoverOffset:4}]},
+        options:{responsive:true,maintainAspectRatio:false,cutout:"65%",
+          plugins:{legend:{position:"bottom",labels:{font:{size:11},boxWidth:12}},
+            title:{display:true,text:"Avg Daily SMV Mix",font:{size:13,weight:"bold"}}}}
+      });
+    }
+
+    // Chart 4: Cadre vs Demand
+    if(cadreRef.current){
+      cadreChart.current=new Chart(cadreRef.current,{
+        type:"bar",
+        data:{labels,datasets:[
+          {label:"Demand (incl. absent.)",
+            data:dailyData.map(d=>d.absent),
+            backgroundColor:dailyData.map(d=>d.absent>cadre?"rgba(220,38,38,.7)":"rgba(16,185,129,.7)"),
+            borderColor:dailyData.map(d=>d.absent>cadre?"#dc2626":"#059669"),
+            borderWidth:1},
+          {label:"Actual Cadre",type:"line",
+            data:dates.map(()=>cadre),
+            borderColor:"#dc2626",borderDash:[6,3],borderWidth:2,
+            pointRadius:0,fill:false,order:0}
+        ]},
+        options:{responsive:true,maintainAspectRatio:false,
+          plugins:{legend:{position:"top",labels:{font:{size:11},boxWidth:12}},
+            title:{display:true,text:"Cadre vs Demand (green=OK, red=shortage)",font:{size:13,weight:"bold"}}},
+          scales:{x:{grid:{display:false},ticks:{font:{size:9},maxRotation:45}},
+            y:{beginAtZero:true,grid:{color:"rgba(0,0,0,.05)"},ticks:{font:{size:10}}}}}
+      });
+    }
+
+    return()=>{[trendChart,stackChart,donutChart,cadreChart].forEach(r=>{if(r.current){r.current.destroy();r.current=null;}});};
+  },[results,allLines,settings,selectedLines]);
+
+  const KPIs=[
+    {label:"Active Styles",value:activeStyles.length,icon:"ti-shirt",color:"#2563eb",bg:"#eff6ff"},
+    {label:"Peak Shortage/Surplus",value:(peakShortage>=0?"▲ +":"")+peakShortage+" workers",
+      icon:"ti-alert-triangle",color:peakShortage<0?"#dc2626":"#16a34a",
+      bg:peakShortage<0?"#fef2f2":"#f0fdf4"},
+    {label:"Avg Daily (incl. absent)",value:avgDemand+" workers",icon:"ti-users",color:"#0d9488",bg:"#f0fdf4"},
+    {label:"Avg Daily QC M/P",value:totalQc+" workers",icon:"ti-shield-check",color:"#059669",bg:"#ecfdf5"},
+    {label:"Critical Days (>Cadre)",value:criticalDays+" days",icon:"ti-calendar-exclamation",
+      color:criticalDays>0?"#dc2626":"#16a34a",bg:criticalDays>0?"#fef2f2":"#f0fdf4"},
+    {label:"Actual Cadre",value:cadre+" workers",icon:"ti-building-factory",color:"#7c3aed",bg:"#faf5ff"},
+  ];
+
+  return el("div",{id:"mp-dashboard",style:{display:"flex",flexDirection:"column",gap:16}},
+    // KPI Cards
+    el("div",{style:{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10}},
+      KPIs.map(k=>el("div",{key:k.label,style:{background:"#fff",border:"0.5px solid #e2e8f0",
+        borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:6}},
+        el("div",{style:{display:"flex",alignItems:"center",gap:8}},
+          el("div",{style:{width:34,height:34,borderRadius:8,background:k.bg,
+            display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}},
+            el("i",{className:"ti "+k.icon,style:{fontSize:16,color:k.color}})),
+          el("p",{style:{margin:0,fontSize:9,color:"#94a3b8",textTransform:"uppercase",letterSpacing:".05em",lineHeight:1.3}},k.label)
+        ),
+        el("p",{style:{margin:0,fontSize:17,fontWeight:700,color:k.color,lineHeight:1}},k.value)
+      ))
+    ),
+    // Charts row 1: Trend (wide) + Donut (narrow)
+    el("div",{style:{display:"grid",gridTemplateColumns:"2fr 1fr",gap:14}},
+      el("div",{style:{background:"#fff",borderRadius:12,padding:"18px",border:"0.5px solid #e2e8f0",height:280}},
+        el("canvas",{ref:trendRef})),
+      el("div",{style:{background:"#fff",borderRadius:12,padding:"18px",border:"0.5px solid #e2e8f0",height:280}},
+        el("canvas",{ref:donutRef}))
+    ),
+    // Charts row 2: Stacked (wide) + Cadre (wide)
+    el("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}},
+      el("div",{style:{background:"#fff",borderRadius:12,padding:"18px",border:"0.5px solid #e2e8f0"}},
+        // Line filter bar
+        el("div",{style:{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:12}},
+          el("span",{style:{fontSize:11,fontWeight:600,color:"#64748b",flexShrink:0}},"Filter Lines:"),
+          el("button",{onClick:()=>setSelectedLines(new Set(allLines.map(String))),
+            style:{fontSize:10,padding:"3px 8px",border:"0.5px solid #e2e8f0",borderRadius:5,
+              background:"#f8fafc",color:"#64748b",cursor:"pointer"}},"All"),
+          el("button",{onClick:()=>setSelectedLines(new Set()),
+            style:{fontSize:10,padding:"3px 8px",border:"0.5px solid #e2e8f0",borderRadius:5,
+              background:"#f8fafc",color:"#64748b",cursor:"pointer"}},"None"),
+          allLines.map((l,i)=>{
+            const lStr=String(l);
+            const active=selectedLines.has(lStr);
+            return el("label",{key:l,style:{display:"flex",alignItems:"center",gap:4,cursor:"pointer",
+              padding:"3px 8px",borderRadius:5,border:"0.5px solid "+(active?LINE_COLORS[i%LINE_COLORS.length]:"#e2e8f0"),
+              background:active?LINE_COLORS[i%LINE_COLORS.length]+"18":"#fff"}},
+              el("input",{type:"checkbox",checked:active,
+                onChange:()=>setSelectedLines(prev=>{
+                  const next=new Set(prev);
+                  if(next.has(lStr))next.delete(lStr);else next.add(lStr);
+                  return next;
+                }),style:{width:12,height:12,accentColor:LINE_COLORS[i%LINE_COLORS.length],cursor:"pointer"}}),
+              el("span",{style:{fontSize:10,fontWeight:500,color:active?LINE_COLORS[i%LINE_COLORS.length]:"#94a3b8"}},
+                "L-"+String(l).padStart(2,"0"))
+            );
+          })
+        ),
+        el("div",{style:{height:260}},el("canvas",{ref:stackRef}))),
+      el("div",{style:{background:"#fff",borderRadius:12,padding:"18px",border:"0.5px solid #e2e8f0",height:280}},
+        el("canvas",{ref:cadreRef}))
+    ),
+    // Footer
+    el("div",{style:{fontSize:10,color:"#94a3b8",textAlign:"right"}},
+      "Manpower Calculator — Period: "+fromDate+" → "+toDate+" — Absenteeism: "+settings.absenteeism+"% — Cadre: "+cadre)
+  );
+}
+
+function CalculateTab({styles,obMap,smvConfig,opSelections,settings,
+  calcFromDate,setCalcFromDate,calcToDate,setCalcToDate,
+  calcActiveStyles,setCalcActiveStyles,calcOverrides,setCalcOverrides,
+  calcResults,setCalcResults,calcCalcState,setCalcCalcState,
+  calcResultView,setCalcResultView,calcExpandedOps,setCalcExpandedOps,
+  calcUseDefaultEff,setCalcUseDefaultEff}){
+  // Use lifted state from App so it persists across tab navigation
+  const fromDate=calcFromDate,setFromDate=setCalcFromDate;
+  const toDate=calcToDate,setToDate=setCalcToDate;
+  const activeStyles=calcActiveStyles,setActiveStyles=setCalcActiveStyles;
+  const overrides=calcOverrides,setOverrides=setCalcOverrides;
+  const useDefaultEff=calcUseDefaultEff,setUseDefaultEff=setCalcUseDefaultEff;
+  const expandedOps=calcExpandedOps,setExpandedOps=setCalcExpandedOps;
+  const results=calcResults,setResults=setCalcResults;
+  const calcState=calcCalcState,setCalcState=setCalcCalcState;
+  const resultView=calcResultView,setResultView=setCalcResultView;
+  const resultsRef=useRef();
+
+  const allLines=[...new Set(styles.map(s=>s.line))].sort((a,b)=>a-b);
+  const SMV_TYPES=smvConfig.map(s=>s.name);
+
+  // Build MC->SMV map
+  const mcToSmv=useMemo(()=>{
+    const map={};
+    smvConfig.forEach(st=>st.departments.forEach(d=>d.mcCodes.forEach(mc=>{map[mc]=st.name;})));
+    return map;
+  },[smvConfig]);
+
+  function findStyles(){
+    if(!fromDate||!toDate)return;
+    const from=localDate(fromDate),to=localDate(toDate);
+    const active=styles.filter(s=>s.startDate&&s.endDate&&s.startDate<=to&&s.endDate>=from);
+    active.sort((a,b)=>a.line-b.line||a.startDate-b.startDate);
+    setActiveStyles(active);
+    const ov={};active.forEach(s=>{ov[s.id]={hours:settings.hours,efficiency:s.eff||settings.efficiency};});
+    setOverrides(ov);setResults(null);setCalcState("input");setUseDefaultEff(false);
+  }
+
+  function calculate(){
+    const from=localDate(fromDate),to=localDate(toDate);
+    const dates=getDates(from,to);
+
+    // Build style data with SMV by type
+    const styleData={};
+    activeStyles.forEach(s=>{
+      const ov=overrides[s.id]||{hours:settings.hours,efficiency:s.eff||settings.efficiency};
+      const ob=obMap[s.styleName];
+      const userSel=opSelections[s.id];
+      const smvByType={};SMV_TYPES.forEach(t=>{smvByType[t]=0;});
+      // Per dept breakdown: {smvType: {deptName: smvTotal}}
+      const smvByDept={};SMV_TYPES.forEach(t=>{smvByDept[t]={};});
+      let hasData=false;
+      if(ob&&ob.ops){
+        hasData=true;
+        ob.ops.forEach((op,i)=>{
+          const opSel=userSel?userSel[i]:null;
+          const included=opSel?opSel.included:!!mcToSmv[op.mcCode];
+          const smvType=opSel?opSel.smvType:(mcToSmv[op.mcCode]||null);
+          if(included&&smvType&&smvByType.hasOwnProperty(smvType)){
+            smvByType[smvType]+=op.gsdsmv;
+            // Track which dept this MC code belongs to
+            let deptName="";
+            smvConfig.forEach(st=>{
+              if(st.name===smvType){
+                st.departments.forEach(d=>{
+                  if(d.mcCodes.includes(op.mcCode))deptName=d.name;
+                });
+              }
+            });
+            if(deptName){
+              if(!smvByDept[smvType][deptName])smvByDept[smvType][deptName]=0;
+              smvByDept[smvType][deptName]+=op.gsdsmv;
+            }
+          }
+        });
+      }
+      styleData[s.id]={
+        ...s,smvByType,smvByDept,hasData,
+        dailyQty:s.dailyQty||0,
+        hours:parseFloat(ov.hours)||settings.hours,
+        eff:parseFloat(ov.efficiency||ov.eff)/100,
+      };
+    });
+
+    // Calculate per line per day — conflict rule: new style (later start) has priority
+    const lineRes={};
+    allLines.forEach(line=>{
+      lineRes[line]={};
+      const lineStyles=activeStyles.filter(s=>s.line===line);
+      dates.forEach(date=>{
+        const dStr=ds(date);
+        const d=new Date(date);d.setHours(0,0,0,0);
+        // Find active styles for this line+date
+        const active=lineStyles.filter(s=>s.startDate&&s.endDate&&s.startDate<=d&&s.endDate>=d);
+        if(!active.length){lineRes[line][dStr]=null;return;}
+        // Conflict rule: if multiple active, prioritize the one that STARTS on this date (new style)
+        // Otherwise prioritize most recently started
+        let chosen=active[0];
+        const startingToday=active.filter(s=>ds(s.startDate)===dStr);
+        if(startingToday.length>0){
+          chosen=startingToday[0];
+          // Mark others as "ended yesterday" for notation
+        }else{
+          // Take the one with latest start date
+          chosen=active.reduce((a,b)=>a.startDate>=b.startDate?a:b);
+        }
+        const sd=styleData[chosen.id];
+        if(!sd){lineRes[line][dStr]=null;return;}
+        const denom=sd.hours*60*sd.eff;
+        const mp={};let spmTotal=0;let helpTotal=0;let qcTotal=0;
+        const deptSmv={};
+        SMV_TYPES.forEach(t=>{
+          const v=denom>0&&sd.dailyQty>0?(sd.smvByType[t]*sd.dailyQty)/denom:0;
+          mp[t]=v;
+          if(t==="QC")qcTotal+=v;
+          else if(t==="SPM")spmTotal+=v;
+          else if(t==="HELP")helpTotal+=v;
+          // Per dept breakdown
+          deptSmv[t]={};
+          if(sd.smvByDept&&sd.smvByDept[t]){
+            Object.entries(sd.smvByDept[t]).forEach(([dept,smv])=>{
+              deptSmv[t][dept]=denom>0&&sd.dailyQty>0?(smv*sd.dailyQty)/denom:0;
+            });
+          }
+        });
+        // Find styles that conflict (ended on this date but another started)
+        const conflictNote=active.length>1&&startingToday.length>0?
+          active.filter(s=>s.id!==chosen.id).map(s=>s.styleName).join(", "):null;
+        const total=spmTotal+helpTotal;
+        lineRes[line][dStr]={
+          styleId:chosen.id,style:chosen.styleName,hasData:sd.hasData,
+          ...mp,total,deptSmv,conflictNote,
+          spmTotal,helpTotal,qcTotal,
+          totalWithAbsent:total*(1+(settings.absenteeism/100)),
+          spmWithAbsent:spmTotal*(1+(settings.absenteeism/100)),
+        };
+      });
+    });
+
+    // KPIs
+    // KPIs
+    let peakDay=null,peakVal=0,sumAll=0,sumDays=0;
+    let minTotal=Infinity,maxTotal=0;
+    dates.forEach(date=>{
+      const dStr=ds(date);
+      const dayTotal=allLines.reduce((s,l)=>{const d=lineRes[l]?.[dStr];return s+(d?d.totalWithAbsent:0);},0);
+      const dayBefore=allLines.reduce((s,l)=>{const d=lineRes[l]?.[dStr];return s+(d?d.total:0);},0);
+      if(dayTotal>peakVal){peakVal=dayTotal;peakDay=fmtDate(date);}
+      if(dayTotal>0){sumAll+=dayTotal;sumDays++;}
+      if(dayBefore>0&&dayBefore<minTotal)minTotal=dayBefore;
+      if(dayBefore>maxTotal)maxTotal=dayBefore;
+    });
+    const minT=minTotal===Infinity?0:r2(minTotal);
+    const maxT=r2(maxTotal);
+    setResults({dates,lineRes,peakDay,peakVal:r2(peakVal),
+      avgTotal:r2(sumDays>0?sumAll/sumDays:0),
+      minTotal:minT,maxTotal:maxT});
+    setCalcState("results");
+    setTimeout(()=>resultsRef.current?.scrollIntoView({behavior:"smooth",block:"start"}),100);
+  }
+
+  function exportXlsx(){
+    if(!results)return;
+    const{dates,lineRes}=results;
+    const wsData=[["Star Garments — Finishing Manpower Calculation"],[`Period: ${fromDate} to ${toDate}`],[],
+      ["Line","Metric",...dates.map(d=>fmtDate(d))]];
+    allLines.forEach(line=>{
+      wsData.push([`Line ${line}`,"Style",...dates.map(d=>{const r=lineRes[line]?.[ds(d)];return r?r.style:"-";})]);
+      SMV_TYPES.forEach(t=>wsData.push(["",[t]+" M/P",
+        ...dates.map(d=>{const r=lineRes[line]?.[ds(d)];return r?r2(r[t]):"";})
+      ]));
+      wsData.push([""," TOTAL (with absent)",...dates.map(d=>{const r=lineRes[line]?.[ds(d)];return r?r2(r.totalWithAbsent):"";})]);
+      wsData.push([]);
+    });
+    wsData.push(["ALL LINES","GRAND TOTAL",...dates.map(d=>{
+      const s=ds(d);return r2(allLines.reduce((acc,l)=>{const r=lineRes[l]?.[s];return acc+(r?r.totalWithAbsent:0);},0));
+    })]);
+    const ws=XLSX.utils.aoa_to_sheet(wsData);
+    const wb_=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb_,ws,"Manpower");
+    XLSX.writeFile(wb_,`FinishingMP_${fromDate}_to_${toDate}.xlsx`);
+  }
+
+  if(styles.length===0)return el(NoData,{});
+
+  return el("div",{style:{display:"flex",flexDirection:"column",gap:16}},
+    // Date range selector
+    el(Card,{},
+      el("p",{style:{margin:"0 0 14px",fontWeight:600,fontSize:14,color:"#0f172a"}},"Select Date Range"),
+      el("div",{style:{display:"flex",alignItems:"flex-end",gap:14,flexWrap:"wrap"}},
+        [["From Date",fromDate,setFromDate],["To Date",toDate,setToDate]].map(([lbl,val,setter])=>
+          el("div",{key:lbl},
+            el("label",{style:{display:"block",fontSize:12,color:"#64748b",marginBottom:6}},lbl),
+            el("input",{type:"date",value:val,onChange:ev=>setter(ev.target.value),
+              style:{padding:"9px 12px",border:"0.5px solid #cbd5e1",borderRadius:7,fontSize:13,color:"#0f172a",background:"#fff"}})
+          )
+        ),
+        el(Btn,{onClick:findStyles,disabled:!fromDate||!toDate,
+          style:{background:NAVY,color:"#fff",padding:"9px 20px",fontSize:13}},
+          el("i",{className:"ti ti-search",style:{marginRight:6}}),"Find Active Styles")
+      )
+    ),
+
+    // Active styles table
+    calcState==="input"&&activeStyles.length>0&&el(Card,{},
+      el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:10}},
+        el("div",{},
+          el("p",{style:{margin:"0 0 3px",fontWeight:600,fontSize:14,color:"#0f172a"}},"Active Styles — "+activeStyles.length+" styles"),
+          el("p",{style:{margin:0,fontSize:12,color:"#64748b"}},"Override available hours and efficiency per style if needed.")
+        ),
+        el("div",{style:{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}},
+          // Use Default Efficiency toggle
+          el("label",{style:{display:"flex",alignItems:"center",gap:8,cursor:"pointer",
+            padding:"8px 14px",border:"0.5px solid "+(useDefaultEff?"#0369a1":"#e2e8f0"),
+            borderRadius:8,background:useDefaultEff?"#e0f2fe":"#fff",
+            fontSize:12,fontWeight:500,color:useDefaultEff?"#0369a1":"#64748b"}},
+            el("input",{type:"checkbox",checked:useDefaultEff,
+              onChange:e=>{
+                setUseDefaultEff(e.target.checked);
+                if(e.target.checked){
+                  // Apply default efficiency to all styles
+                  const newOv={};
+                  activeStyles.forEach(s=>{
+                    newOv[s.id]={
+                      hours:overrides[s.id]?.hours||settings.hours,
+                      efficiency:settings.efficiency
+                    };
+                  });
+                  setOverrides(p=>({...p,...newOv}));
+                }
+              },
+              style:{width:15,height:15,accentColor:"#0369a1",cursor:"pointer"}}),
+            el("i",{className:"ti ti-refresh",style:{fontSize:13}}),
+            "Use Default Efficiency ("+settings.efficiency+"%)"
+          ),
+          el(Btn,{onClick:calculate,style:{background:ORANGE,color:"#fff",padding:"11px 24px",fontSize:14,fontWeight:700,boxShadow:"0 2px 8px rgba(224,123,57,.35)"}},
+            el("i",{className:"ti ti-calculator",style:{marginRight:7,fontSize:16}}),"Calculate Manpower")
+        )
+      ),
+      el("div",{style:{overflowX:"auto"}},
+        el("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:13}},
+          el("thead",{},el("tr",{style:{background:"#f8fafc"}},
+            ["Line","Style Name","GMT Type","Start","End","PLN QTY","Daily","Prod Days","Avail. Hours","Efficiency %","Has OB Data","Operations"].map(h=>
+              el("th",{key:h,style:{padding:"9px 12px",textAlign:"left",fontWeight:500,color:"#64748b",fontSize:11,borderBottom:"0.5px solid #e2e8f0",whiteSpace:"nowrap"}},h)
+            )
+          )),
+          el("tbody",{},activeStyles.flatMap((s,i)=>{
+            const ov=overrides[s.id]||{hours:settings.hours,efficiency:s.eff||settings.efficiency};
+            const ob=obMap[s.styleName];
+            const hasData=!!(ob&&ob.ops&&ob.ops.length>0);
+            const isExpOps=expandedOps[s.id];
+            const sel=opSelections[s.id]||{};
+            // Build selected ops grouped by SMV type
+            const byType={};
+            if(hasData){
+              ob.ops.forEach((op,idx)=>{
+                const opSel=sel[idx]||{included:!!mcToSmv[op.mcCode],smvType:mcToSmv[op.mcCode]||""};
+                if(!opSel.included||!opSel.smvType)return;
+                if(!byType[opSel.smvType])byType[opSel.smvType]={ops:[],total:0};
+                byType[opSel.smvType].ops.push({desc:op.description,smv:op.gsdsmv||0});
+                byType[opSel.smvType].total+=op.gsdsmv||0;
+              });
+            }
+            const rowBg=i%2===0?"#fff":"#f8fafc";
+            return [
+              el("tr",{key:s.id,style:{borderBottom:isExpOps?"none":"0.5px solid #f1f5f9",background:rowBg,
+                outline:!hasData?"2px solid #fca5a5":"none"}},
+                el("td",{style:{padding:"8px 12px",fontWeight:600,color:NAVY}},"L-"+s.line),
+                el("td",{style:{padding:"8px 12px",fontWeight:500,color:"#0f172a"}},s.styleName),
+                el("td",{style:{padding:"8px 12px",color:"#64748b",fontSize:12}},s.gmtType),
+                el("td",{style:{padding:"8px 12px",color:"#94a3b8",fontSize:12}},fmtDate(s.startDate)),
+                el("td",{style:{padding:"8px 12px",color:"#94a3b8",fontSize:12}},fmtDate(s.endDate)),
+                el("td",{style:{padding:"8px 12px",color:"#64748b"}},(s.plnQty||0).toLocaleString()),
+                el("td",{style:{padding:"8px 12px",color:"#64748b"}},s.dailyQty+"/d"),
+                el("td",{style:{padding:"8px 12px",color:"#64748b"}},s.prodDays),
+                el("td",{style:{padding:"6px 8px"}},el("input",{type:"number",value:ov.hours,min:1,max:24,step:0.5,
+                  onChange:ev=>setOverrides(p=>({...p,[s.id]:{...p[s.id],hours:ev.target.value}})),
+                  style:{width:60,padding:"5px 7px",border:"0.5px solid #cbd5e1",borderRadius:5,fontSize:13,textAlign:"center"}})),
+                el("td",{style:{padding:"6px 8px"}},el("input",{type:"number",value:ov.efficiency,min:1,max:100,step:1,
+                  onChange:ev=>setOverrides(p=>({...p,[s.id]:{...p[s.id],efficiency:ev.target.value}})),
+                  style:{width:60,padding:"5px 7px",border:"0.5px solid #cbd5e1",borderRadius:5,fontSize:13,textAlign:"center"}})),
+                el("td",{style:{padding:"8px 12px"}},
+                  hasData
+                  ?el("span",{style:{color:"#16a34a",fontSize:11,fontWeight:600}},el("i",{className:"ti ti-check"})," Yes")
+                  :el("span",{style:{color:"#dc2626",fontSize:11,fontWeight:600,background:"#fef2f2",padding:"2px 8px",borderRadius:20}},el("i",{className:"ti ti-x"})," No OB data")
+                ),
+                // Operations dropdown button
+                el("td",{style:{padding:"6px 12px"}},
+                  hasData
+                  ?el("button",{onClick:()=>setExpandedOps(p=>({...p,[s.id]:!p[s.id]})),
+                    style:{display:"flex",alignItems:"center",gap:5,padding:"5px 10px",
+                      border:"0.5px solid "+(isExpOps?"#0369a1":"#cbd5e1"),
+                      borderRadius:6,cursor:"pointer",fontSize:11,fontWeight:500,
+                      background:isExpOps?"#e0f2fe":"#f8fafc",
+                      color:isExpOps?"#0369a1":"#64748b",whiteSpace:"nowrap"}},
+                    el("i",{className:"ti ti-clipboard-list",style:{fontSize:12}}),
+                    ob.ops.length+" ops",
+                    el("i",{className:"ti ti-chevron-"+(isExpOps?"up":"down"),style:{fontSize:10}})
+                  )
+                  :el("span",{style:{fontSize:11,color:"#cbd5e1"}})
+                )
+              ),
+              // Expandable ops summary
+              isExpOps&&el("tr",{key:s.id+"_ops",style:{background:"#f0f9ff",borderBottom:"1px solid #bae6fd"}},
+                el("td",{colSpan:12,style:{padding:"12px 18px"}},
+                  el("div",{style:{display:"flex",gap:14,flexWrap:"wrap"}},
+                    // Grand total SMV + op count
+                    el("div",{style:{background:"#fff",border:"0.5px solid #bae6fd",borderRadius:8,
+                      padding:"10px 14px",minWidth:140,textAlign:"center"}},
+                      el("div",{style:{fontSize:11,color:"#0369a1",fontWeight:600,marginBottom:2}},"All Operations"),
+                      el("div",{style:{fontSize:11,color:"#64748b",marginBottom:6}},ob.ops.length+" total ops"),
+                      el("div",{style:{fontSize:18,fontWeight:800,color:"#0369a1",fontFamily:"'DM Mono',monospace"}},
+                        ob.ops.reduce((a,op)=>a+(op.gsdsmv||0),0).toFixed(3)),
+                      el("div",{style:{fontSize:9,color:"#94a3b8",marginTop:2}},"Total GSD SMV (all ops)")
+                    ),
+                    // Selected ops total
+                    el("div",{style:{background:"#fff",border:"0.5px solid #bbf7d0",borderRadius:8,
+                      padding:"10px 14px",minWidth:140,textAlign:"center"}},
+                      el("div",{style:{fontSize:11,color:"#16a34a",fontWeight:600,marginBottom:2}},"Selected Operations"),
+                      el("div",{style:{fontSize:11,color:"#64748b",marginBottom:6}},
+                        Object.values(byType).reduce((a,t)=>a+t.ops.length,0)+" selected ops"),
+                      el("div",{style:{fontSize:18,fontWeight:800,color:"#16a34a",fontFamily:"'DM Mono',monospace"}},
+                        r2(Object.values(byType).reduce((a,t)=>a+t.total,0)).toFixed(3)),
+                      el("div",{style:{fontSize:9,color:"#94a3b8",marginTop:2}},"Selected GSD SMV")
+                    ),
+                    // Per SMV type breakdown
+                    ...Object.entries(byType).map(([typeName,data])=>
+                      el("div",{key:typeName,style:{background:"#fff",border:"0.5px solid #e2e8f0",
+                        borderRadius:8,padding:"10px 14px",minWidth:180,flex:"1"}},
+                        el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",
+                          marginBottom:8,paddingBottom:6,borderBottom:"0.5px solid #f1f5f9"}},
+                          el("span",{style:{fontSize:12,fontWeight:700,color:"#0f172a"}},"SMV: "+typeName),
+                          el("span",{style:{fontSize:14,fontWeight:800,color:"#0369a1",fontFamily:"'DM Mono',monospace"}},
+                            r2(data.total).toFixed(3))
+                        ),
+                        el("div",{style:{display:"flex",flexDirection:"column",gap:3,maxHeight:160,overflowY:"auto"}},
+                          data.ops.map((op,oi)=>el("div",{key:oi,style:{
+                            display:"flex",justifyContent:"space-between",alignItems:"center",
+                            fontSize:11,color:"#374151",gap:8}},
+                            el("span",{style:{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}},op.desc),
+                            el("span",{style:{fontFamily:"'DM Mono',monospace",color:"#64748b",flexShrink:0}},op.smv.toFixed(3))
+                          ))
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            ].filter(Boolean);
+          }))
+        )
+      )
+    ),
+
+    // Results
+    calcState==="results"&&results&&el("div",{className:"fade",ref:resultsRef,style:{display:"flex",flexDirection:"column",gap:16}},
+      el("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}},
+        el(Btn,{onClick:()=>setCalcState("input"),style:{background:"transparent",border:"0.5px solid #e2e8f0",color:"#64748b"}},
+          el("i",{className:"ti ti-arrow-left",style:{marginRight:6}}),"Edit Parameters"),
+        el("div",{style:{display:"flex",alignItems:"center",gap:8}},
+          el("span",{style:{fontSize:12,color:"#94a3b8"}},"Period: ",fromDate," → ",toDate),
+          el("div",{style:{display:"flex",border:"0.5px solid #e2e8f0",borderRadius:8,overflow:"hidden"}},
+            [["table","ti-table","Table"],["dashboard","ti-chart-bar","Dashboard"]].map(([v,icon,lbl])=>
+              el("button",{key:v,onClick:()=>setResultView(v),style:{
+                padding:"7px 14px",border:"none",cursor:"pointer",fontSize:12,fontWeight:500,
+                display:"flex",alignItems:"center",gap:5,
+                background:resultView===v?NAVY:"#fff",
+                color:resultView===v?"#fff":"#64748b"}},
+                el("i",{className:"ti "+icon,style:{fontSize:13}}),lbl)
+            )
+          ),
+          resultView==="dashboard"&&el(Btn,{onClick:()=>{
+            const dash=document.getElementById("mp-dashboard");
+            if(!dash)return;
+            html2canvas(dash,{scale:2,useCORS:true,backgroundColor:"#f0f2f7"}).then(canvas=>{
+              const a=document.createElement("a");
+              a.href=canvas.toDataURL("image/png");
+              a.download="Manpower_Dashboard.png";a.click();
+            });
+          },style:{background:"#7c3aed",color:"#fff"}},
+            el("i",{className:"ti ti-file-download",style:{marginRight:6}}),"Save as Image"),
+          resultView==="table"&&el(Btn,{onClick:exportXlsx,style:{background:NAVY,color:"#fff"}},
+            el("i",{className:"ti ti-download",style:{marginRight:6}}),"Export Excel")
+        )
+      ),
+      // KPI cards
+      // KPI cards — 5 cards
+      el("div",{style:{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10}},
+        [["Active Styles",activeStyles.length,"ti-shirt","#EEF2F8",NAVY],
+         ["Peak Manpower Day",results.peakDay,"ti-trending-up","#FFF4EB",ORANGE],
+         ["Avg Daily (incl. absent)",results.avgTotal+" workers","ti-users","#f0fdf4","#166534"],
+         ["Min (before absent.)",results.minTotal+" workers","ti-arrow-down-circle","#fdf4ff","#7c3aed"],
+         ["Max (before absent.)",results.maxTotal+" workers","ti-arrow-up-circle","#fff1f2","#be123c"],
+        ].map(([lbl,val,icon,iconBg,iconColor])=>
+          el("div",{key:lbl,style:{background:"#fff",border:"0.5px solid #e2e8f0",borderRadius:12,padding:"16px 18px",display:"flex",alignItems:"center",gap:12}},
+            el("div",{style:{width:42,height:42,borderRadius:10,background:iconBg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}},
+              el("i",{className:"ti "+icon,style:{fontSize:20,color:iconColor}})),
+            el("div",{},
+              el("p",{style:{margin:"0 0 3px",fontSize:10,color:"#94a3b8",textTransform:"uppercase",letterSpacing:".06em"}},lbl),
+              el("p",{style:{margin:0,fontSize:18,fontWeight:700,color:"#0f172a"}},val)
+            )
+          )
+        )
+      ),
+      // Absenteeism info
+      el("div",{style:{background:"#fff7ed",border:"0.5px solid #fed7aa",borderRadius:10,padding:"10px 16px",fontSize:12,color:"#92400e"}},
+        el("i",{className:"ti ti-info-circle",style:{marginRight:6}}),
+        "Manpower figures include "+settings.absenteeism+"% absenteeism adjustment. Configure in Settings."
+      ),
+      resultView==="dashboard"&&el(ManpowerDashboard,{results,allLines,settings,activeStyles,fromDate,toDate,ds,r2,NAVY,ORANGE}),
+      // Results table
+        // Results table - matches screenshot format with dept breakdown
+        el("div",{style:{background:"#fff",border:"0.5px solid #e2e8f0",borderRadius:12,overflow:"hidden"}},
+          el("div",{style:{padding:"14px 18px",borderBottom:"0.5px solid #e2e8f0"}},
+            el("p",{style:{margin:0,fontWeight:600,fontSize:14,color:"#0f172a"}},"Daily Manpower Breakdown by Line")),
+          el("div",{style:{overflowX:"auto"}},
+            el("table",{style:{borderCollapse:"collapse",fontSize:12,whiteSpace:"nowrap",minWidth:"100%"}},
+              el("thead",{},el("tr",{style:{background:NAVY}},
+                el("th",{style:{padding:"10px 14px",textAlign:"left",color:"rgba(255,255,255,.65)",fontWeight:500,
+                  position:"sticky",left:0,background:NAVY,zIndex:2,minWidth:80,fontSize:11}},"Line"),
+                el("th",{style:{padding:"10px 14px",textAlign:"left",color:"rgba(255,255,255,.65)",fontWeight:500,
+                  position:"sticky",left:80,background:NAVY,zIndex:2,minWidth:180,
+                  borderRight:"1px solid rgba(255,255,255,.1)",fontSize:11}},"Metric"),
+                results.dates.map(d=>el("th",{key:ds(d),style:{padding:"10px 10px",textAlign:"center",
+                  color:"rgba(255,255,255,.8)",fontWeight:400,minWidth:80,fontSize:11}},fmtDate(d)))
+              )),
+              el("tbody",{},
+                allLines.map(line=>{
+                  const lineColor=STYLE_PALETTE[(line-1)%STYLE_PALETTE.length];
+                  // Build rows: Style, then per SMV type with dept breakdown + subtotal, then Line Total, Absenteeism
+                  const rows=[];
+                  // Style row
+                  rows.push({label:"Style",isStyle:true});
+                  // Per SMV type: dept rows + subtotal
+                  smvConfig.forEach(st=>{
+                    st.departments.forEach(dept=>{
+                      rows.push({label:st.name+" M/P ("+dept.name+")",isSmvDept:true,smvType:st.name,dept:dept.name,color:st.color});
+                    });
+                    // Always show subtotal row for each SMV type
+                    rows.push({label:st.name+" M/P Total",isSmvTotal:true,smvType:st.name,color:st.color});
+                  });
+
+
+                  return rows.map((row,ri)=>{
+                    const bg=row.isLineTotal?"#fff7ed":row.isAbsent?"#fff7ed":row.isStyle?"#f8fafc":row.isSmvTotal?"#f0f4ff":"#fff";
+                    const fw=row.isLineTotal||row.isAbsent?700:row.isSmvTotal?600:400;
+                    const tc=row.isLineTotal?ORANGE:row.isAbsent?ORANGE:row.isStyle?"#374151":row.isSmvTotal?"#1e40af":"#64748b";
+                    const borderBottom=row.isAbsent?"1px solid #e2e8f0":row.isSmvTotal?"1px solid #c7d2fe":"0.5px solid #f1f5f9";
+                    const borderLeft=row.isSmvTotal?"3px solid "+(row.color||"#6366f1"):"none";
+                    return el("tr",{key:line+"_"+ri,style:{borderBottom,borderLeft,background:bg}},
+                      // Line label (spans all rows for this line)
+                      ri===0&&el("td",{rowSpan:rows.length,style:{
+                        padding:"8px 14px",fontWeight:700,fontSize:12,color:"#fff",
+                        background:lineColor,position:"sticky",left:0,zIndex:1,
+                        verticalAlign:"top",whiteSpace:"nowrap"}},
+                        "Line "+line),
+                      // Metric label with colored dot for SMV rows
+                      el("td",{style:{padding:"7px 14px",fontWeight:fw,fontSize:12,color:tc,
+                        position:"sticky",left:80,zIndex:1,background:bg,
+                        borderRight:"1px solid #e2e8f0",whiteSpace:"nowrap"}},
+                        el("div",{style:{display:"flex",alignItems:"center",gap:6}},
+                          (row.isSmvDept||row.isSmvTotal)&&el("span",{style:{
+                            width:8,height:8,borderRadius:"50%",flexShrink:0,
+                            background:row.color,display:"inline-block"}}),
+                          row.label
+                        )
+                      ),
+                      // Data cells
+                      results.dates.map(d=>{
+                        const dStr=ds(d);
+                        const dayData=results.lineRes[line]?.[dStr];
+                        const noData=dayData&&!dayData.hasData;
+                        let val="—";
+                        if(dayData){
+                          if(row.isStyle){
+                            val=el("div",{},
+                              el("div",{style:{fontSize:10,fontWeight:600,color:"#374151",maxWidth:90,overflow:"hidden",textOverflow:"ellipsis"}},dayData.style||"—"),
+                              dayData.conflictNote&&el("div",{title:"Also active: "+dayData.conflictNote,
+                                style:{fontSize:9,color:"#d97706",cursor:"help"}},
+                                el("i",{className:"ti ti-alert-triangle"})," overlap")
+                            );
+                          }else if(noData){
+                            val=el("span",{style:{color:"#94a3b8"}},"—");
+                          }else if(row.isSmvDept){
+                            // Calculate per-dept SMV contribution
+                            const deptSmv=dayData["deptSmv"]?.[row.smvType]?.[row.dept]||0;
+                            val=deptSmv>0?r2(deptSmv):"—";
+                          }else if(row.isSmvTotal){
+                            const smvTot=r2(dayData[row.smvType]||0);
+                            val=smvTot>0?smvTot:"—";
+                          }else if(row.isLineTotal){
+                            const lt=r2(dayData.total);
+                            val=el("strong",{style:{color:ORANGE}},lt>0?lt:"—");
+                          }else if(row.isAbsent){
+                            const at=r2(dayData.totalWithAbsent);
+                            val=at>0?at:"—";
+                          }
+                        }
+                        return el("td",{key:dStr,style:{padding:"7px 10px",textAlign:"center",
+                          color:row.isLineTotal||row.isAbsent?"#0f172a":row.isSmvTotal?"#1e40af":"#64748b",
+                          fontWeight:row.isLineTotal||row.isAbsent?700:row.isSmvTotal?600:400,
+                          background:noData&&!row.isStyle?"#fef2f2":row.isSmvTotal?"#f0f4ff":"transparent",
+                          border:noData&&!row.isStyle?"1px solid #fca5a5":"none"}},val);
+                      })
+                    );
+                  });
+                }),
+                // Grand Total rows — SPM, HELP, SPM+absent, QC separately
+                ...[
+                  {label:"GRAND TOTAL SPM M/P (before absent.)",key:"spmTotal",bg:"#1a2744",color:"#93c5fd",fw:600,fs:11},
+                  {label:"GRAND TOTAL SPM M/P (after absent. "+settings.absenteeism+"%)",key:"spmWithAbsent",bg:"#162236",color:"#60a5fa",fw:700,fs:12},
+                  {label:"GRAND TOTAL HELP M/P",key:"helpTotal",bg:"#1a3020",color:"#86efac",fw:600,fs:11},
+                  {label:"GRAND TOTAL QC M/P",key:"qcTotal",bg:"#1a3a2a",color:"#6ee7b7",fw:700,fs:12},
+                ].map(row=>el("tr",{key:row.key,style:{background:row.bg}},
+                  el("td",{colSpan:2,style:{padding:"10px 14px",fontWeight:row.fw,fontSize:row.fs,color:row.color,
+                    position:"sticky",left:0,background:row.bg,zIndex:1}},row.label),
+                  results.dates.map(d=>{
+                    const dStr=ds(d);
+                    const val=r2(allLines.reduce((acc,l)=>{const r=results.lineRes[l]?.[dStr];return acc+(r?r[row.key]||0:0);},0));
+                    return el("td",{key:dStr,style:{padding:"10px 10px",textAlign:"center",fontWeight:row.fw,fontSize:row.fs===13?13:12,color:row.color}},val||"—");
+                  })
+                ))
+              )
+            )
+          )
+        ),
+        // Cadre Comparison — shown below results table only when results exist
+        calcState==="results"&&results&&el("div",{style:{background:"#fff",border:"0.5px solid #e2e8f0",
+          borderRadius:12,overflow:"hidden",marginTop:8}},
+          el("div",{style:{padding:"12px 18px",borderBottom:"0.5px solid #e2e8f0",display:"flex",alignItems:"center",gap:10}},
+            el("p",{style:{margin:0,fontWeight:600,fontSize:13,color:"#0f172a"}},"Cadre Comparison"),
+            el("span",{style:{fontSize:12,color:"#94a3b8"}},"Actual cadre: "+(settings.actualCadre||80)+" workers (set in Settings)")
+          ),
+          el("div",{style:{overflowX:"auto"}},
+            el("table",{style:{borderCollapse:"collapse",fontSize:12,whiteSpace:"nowrap"}},
+              el("thead",{},el("tr",{style:{background:"#f8fafc"}},
+                el("th",{style:{padding:"9px 14px",textAlign:"left",fontWeight:600,color:"#64748b",
+                  fontSize:11,borderBottom:"0.5px solid #e2e8f0",position:"sticky",left:0,background:"#f8fafc",minWidth:260}},"Metric"),
+                results.dates.map(d=>el("th",{key:ds(d),style:{padding:"9px 10px",textAlign:"center",
+                  fontWeight:400,color:"#64748b",fontSize:11,minWidth:80,borderBottom:"0.5px solid #e2e8f0"}},fmtDate(d)))
+              )),
+              el("tbody",{},
+                ["before","after"].map(type=>{
+                  const isBefore=type==="before";
+                  return el("tr",{key:type,style:{background:isBefore?"#fff":"#f8fafc",borderBottom:"0.5px solid #f1f5f9"}},
+                    el("td",{style:{padding:"9px 14px",fontWeight:500,color:"#374151",fontSize:12,
+                      position:"sticky",left:0,background:isBefore?"#fff":"#f8fafc",borderRight:"1px solid #e2e8f0"}},
+                      isBefore?"Planned (before absenteeism) vs Cadre":"Planned (incl. absenteeism) vs Cadre"),
+                    results.dates.map(d=>{
+                      const dStr=ds(d);
+                      const val=r2(allLines.reduce((acc,l)=>{const r=results.lineRes[l]?.[dStr];return acc+(r?(isBefore?r.total:r.totalWithAbsent):0);},0));
+                      const cadre=settings.actualCadre||80;
+                      const diff=r2(cadre-val);
+                      const isShort=diff<0;
+                      return el("td",{key:dStr,style:{padding:"9px 10px",textAlign:"center"}},
+                        val>0?el("div",{style:{display:"flex",flexDirection:"column",alignItems:"center",gap:2}},
+                          el("span",{style:{fontSize:10,color:"#94a3b8"}},"Plan: "+val),
+                          el("span",{style:{fontSize:12,fontWeight:700,
+                            color:isShort?"#dc2626":"#16a34a",
+                            background:isShort?"#fef2f2":"#f0fdf4",
+                            padding:"2px 8px",borderRadius:20,
+                            border:"1px solid "+(isShort?"#fca5a5":"#bbf7d0")}},
+                            (isShort?"▼ ":"▲ ")+Math.abs(diff))
+                        ):"—"
+                      );
+                    })
+                  );
+                })
+              )
+            )
+          )
+        )
+      )
+    );
+}
+
+// Module-level SHA store — persists across renders, no closure issues
+const _ghShas={fr:null,ob:null};
+try{_ghShas.fr=localStorage.getItem("sgl_fr_sha")||null;}catch(e){}
+try{_ghShas.ob=localStorage.getItem("sgl_ob_sha")||null;}catch(e){}
+
+// ── MAIN APP ──────────────────────────────────────────────────────────────────
+function App(){
+  const [page,setPage]=useState("landing");
+  const [isEntering,setIsEntering]=useState(false);
+  const [styles,setStyles]=useState([]);
+  const [obMap,setObMap]=useState({});
+  const [obRawBytes,setObRawBytes]=useState(null);
+  const [smvConfig,setSmvConfig]=useState(()=>loadLS(LS_SMV,DEFAULT_SMV_CONFIG));
+  const [settings,setSettings]=useState(()=>({...DEFAULT_SETTINGS,...loadLS(LS_SETTINGS,{})}));
+  const [frInfo,setFrInfo]=useState(null);
+  const [obInfo,setObInfo]=useState(null);
+  const [frDragging,setFrDragging]=useState(false);
+  const [obDragging,setObDragging]=useState(false);
+  const [ghFrLoading,setGhFrLoading]=useState(false);
+  const [ghFrErr,setGhFrErr]=useState(null);
+  const [frChanged,setFrChanged]=useState(false);
+  const [obChanged,setObChanged]=useState(false);
+  const [obGhLoading,setObGhLoading]=useState(false);
+  const [obGhStatus,setObGhStatus]=useState(null);
+  const [colorMode,setColorMode]=useState("style");
+  const [pbSelectMode,setPbSelectMode]=useState(false);
+  const [boardZoom,setBoardZoom]=useState(1);
+  const [gmtFocus,setGmtFocus]=useState(null);
+  // Persisted Calculate tab state
+  const [calcFromDate,setCalcFromDate]=useState("");
+  const [calcToDate,setCalcToDate]=useState("");
+  const [calcActiveStyles,setCalcActiveStyles]=useState([]);
+  const [calcOverrides,setCalcOverrides]=useState({});
+  const [calcResults,setCalcResults]=useState(null);
+  const [calcCalcState,setCalcCalcState]=useState("input");
+  const [calcResultView,setCalcResultView]=useState("table");
+  const [calcExpandedOps,setCalcExpandedOps]=useState({});
+  const [calcUseDefaultEff,setCalcUseDefaultEff]=useState(false);
+  const [pbSelectedId,setPbSelectedId]=useState(null);
+  const [opSelections,setOpSelections]=useState({});
+  const [smTabState,setSmTabState]=useState({});
+  const frRef=useRef();const obRef=useRef();
+
+  const isLanding=page==="landing";
+  useEffect(()=>{if(typeof document!=="undefined")document.body.style.background=isLanding?"#0B2A4A":"#F0F2F7";},[isLanding]);
+
+  function loadFRFile(file){
+    const reader=new FileReader();
+    reader.onload=(ev)=>{
+      try{
+        const wb=XLSX.read(new Uint8Array(ev.target.result),{type:"array",cellDates:false,raw:true});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        const{styles:parsed}=parseFRPlan(ws);
+        const lines=[...new Set(parsed.map(s=>s.line))].sort((a,b)=>a-b);
+        setStyles(parsed);setOpSelections({});
+        setFrInfo({file:file.name,count:parsed.length,lines:lines.length,linesList:lines});
+      }catch(err){setFrInfo({error:err.message});}
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function loadOBFile(bytes){
+    try{
+      const wb=XLSX.read(bytes,{type:"array",cellDates:false,raw:true});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const map=parseOB(ws);
+      setObMap(map);
+      setObRawBytes(bytesToBase64(bytes));
+      setObInfo({file:"OB file",count:Object.keys(map).length,note:"(styles in OB file — matched count shown in Style Manager)"});
+    }catch(err){setObInfo({error:err.message});}
+  }
+
+  async function loadFRFromGitHub(){
+    try{
+      setGhFrLoading(true);setGhFrErr(null);
+      const res=await fetch(GH_FR_URL,{headers:{Authorization:"Bearer "+GH_TOKEN,Accept:"application/vnd.github+json"}});
+      if(!res.ok){if(res.status===404)throw new Error("No FR Plan saved yet.");throw new Error("GitHub error "+res.status);}
+      const data=await res.json();
+      // Use module-level variable — immune to React closure staleness
+      const hasChanged=!!(_ghShas.fr&&data.sha&&_ghShas.fr!==data.sha);
+      console.log("[FR SHA] stored=",_ghShas.fr,"new=",data.sha,"changed=",hasChanged);
+      _ghShas.fr=data.sha||"";
+      try{localStorage.setItem("sgl_fr_sha",_ghShas.fr);}catch(e){}
+      setFrChanged(hasChanged);
+      const b64=data.content.replace(/[\n\r]/g,"");
+      const bin=atob(b64);const bytes=new Uint8Array(bin.length);
+      for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+      loadFRFile(new File([bytes],"Production_Plan.xlsx"));
+      setGhFrLoading(false);
+    }catch(e){setGhFrErr(e.message);setGhFrLoading(false);}
+  }
+
+  async function loadOBFromGitHub(){
+    try{
+      setObGhLoading(true);setObGhStatus("loading");
+      const metaRes=await fetch(GH_OB_URL,{headers:{Authorization:"Bearer "+GH_TOKEN,Accept:"application/vnd.github+json"}});
+      if(!metaRes.ok){
+        if(metaRes.status===404)throw new Error("No OB file saved yet. Upload and save from Planning Board Editor first.");
+        throw new Error("GitHub error "+metaRes.status);
+      }
+      const meta=await metaRes.json();
+      // Use module-level variable — immune to React closure staleness
+      const obHasChanged=!!(_ghShas.ob&&meta.sha&&_ghShas.ob!==meta.sha);
+      console.log("[OB SHA] stored=",_ghShas.ob,"new=",meta.sha,"changed=",obHasChanged);
+      _ghShas.ob=meta.sha||"";
+      try{localStorage.setItem("sgl_ob_sha",_ghShas.ob);}catch(e){}
+      setObChanged(obHasChanged);
+      let bytes;
+      if(meta.content&&meta.content.replace(/[\n\r]/g,"").length>0){
+        const b64=meta.content.replace(/[\n\r]/g,"");
+        const bin=atob(b64);bytes=new Uint8Array(bin.length);
+        for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+      }else{
+        // Large file — use blob API
+        const blobRes=await fetch("https://api.github.com/repos/"+GH_OWNER+"/"+GH_REPO+"/git/blobs/"+meta.sha,
+          {headers:{Authorization:"Bearer "+GH_TOKEN,Accept:"application/vnd.github+json"}});
+        if(!blobRes.ok)throw new Error("Blob fetch failed: "+blobRes.status);
+        const blobData=await blobRes.json();
+        const b64=blobData.content.replace(/[\n\r]/g,"");
+        const bin=atob(b64);bytes=new Uint8Array(bin.length);
+        for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+      }
+      loadOBFile(bytes);
+      setObGhStatus("loaded");
+      setTimeout(()=>setObGhStatus(null),3000);
+    }catch(e){
+      setObGhStatus("error:"+e.message);
+      alert("OB Load Error: "+e.message);
+      setTimeout(()=>setObGhStatus(null),6000);
+    }finally{setObGhLoading(false);}
+  }
+
+  const tabs=[
+    {id:"upload",icon:"ti-upload",label:"Upload"},
+    {id:"stylemanager",icon:"ti-shirt",label:"Style Manager"},
+    {id:"planningboard",icon:"ti-layout-kanban",label:"Planning Board"},
+    {id:"calculate",icon:"ti-calculator",label:"Calculate"},
+    {id:"settings",icon:"ti-settings",label:"Settings"},
+  ];
+
+  return el("div",{style:{fontFamily:"'DM Sans',system-ui,sans-serif",
+    background:isLanding?"#0B2A4A":"#F0F2F7",minHeight:"100vh",
+    display:"flex",flexDirection:"column"}},
+
+    // ── LANDING PAGE ──────────────────────────────────────────────────────────
+    page==="landing"&&el("div",{style:{position:"fixed",inset:0,
+      background:"linear-gradient(160deg,#0B2A4A 0%,#0f3460 50%,#0B2A4A 100%)",
+      display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+      zIndex:999,overflow:"hidden"}},
+      el("div",{style:{position:"absolute",width:700,height:700,borderRadius:"50%",background:"rgba(255,255,255,.02)",top:-250,right:-250,pointerEvents:"none"}}),
+      el("div",{style:{position:"absolute",width:500,height:500,borderRadius:"50%",background:"rgba(255,255,255,.02)",bottom:-200,left:-200,pointerEvents:"none"}}),
+      el("div",{style:{position:"absolute",width:300,height:300,borderRadius:"50%",background:"rgba(224,123,57,.07)",top:"25%",left:"8%",pointerEvents:"none"}}),
+      // Loading overlay
+      isEntering&&el("div",{style:{position:"fixed",inset:0,background:"linear-gradient(160deg,#0B2A4A 0%,#0f3460 50%,#0B2A4A 100%)",
+        display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:1000,gap:28}},
+        el("div",{style:{position:"relative",width:80,height:80}},
+          el("div",{style:{position:"absolute",inset:0,borderRadius:"50%",border:"3px solid rgba(255,255,255,.1)"}}),
+          el("div",{style:{position:"absolute",inset:0,borderRadius:"50%",border:"3px solid transparent",borderTopColor:"#E07B39",borderRightColor:"rgba(224,123,57,.4)",animation:"spin 1s linear infinite"}}),
+          el("div",{style:{position:"absolute",inset:8,borderRadius:"50%",border:"2px solid transparent",borderTopColor:"rgba(255,255,255,.6)",animation:"spin .7s linear infinite reverse"}}),
+          el("div",{style:{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",width:10,height:10,borderRadius:"50%",background:"#E07B39",boxShadow:"0 0 12px rgba(224,123,57,.8)"}})
+        ),
+        el("div",{style:{textAlign:"center"}},
+          el("div",{style:{fontSize:16,fontWeight:700,color:"#fff",marginBottom:6,letterSpacing:.5}},"Initializing System"),
+          el("div",{style:{fontSize:12,color:"rgba(255,255,255,.45)",fontFamily:"'DM Mono',monospace"}},"Preparing your workspace...")
+        ),
+        el("div",{style:{width:200,height:3,background:"rgba(255,255,255,.1)",borderRadius:10,overflow:"hidden"}},
+          el("div",{style:{height:"100%",borderRadius:10,background:"linear-gradient(90deg,#E07B39,#f59e0b)",animation:"progress 2s linear forwards"}})
+        )
+      ),
+      el("div",{style:{position:"relative",zIndex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:20,maxWidth:540,width:"90%",textAlign:"center"}},
+        el("div",{style:{marginBottom:4}},
+          el("img",{src:"https://www.star.lk/wp-content/uploads/2024/12/star-logo.svg",alt:"Star Garments",height:48,
+            style:{filter:"brightness(0) invert(1)",display:"block"},onError:e=>{e.target.style.display="none";}})),
+        el("div",{style:{width:56,height:3,borderRadius:3,background:"linear-gradient(90deg,transparent,#E07B39,transparent)"}}),
+        el("div",{},
+          el("div",{style:{fontSize:13,fontWeight:600,color:"rgba(255,255,255,.45)",letterSpacing:4,textTransform:"uppercase",marginBottom:10}},"Star Garments - Katunayaka"),
+          el("div",{style:{fontSize:36,fontWeight:800,color:"#fff",lineHeight:1.15,letterSpacing:-1}},"Finishing"),
+          el("div",{style:{fontSize:36,fontWeight:800,background:"linear-gradient(90deg,#E07B39,#f59e0b)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",lineHeight:1.15,letterSpacing:-1}},"Manpower Calculator")
+        ),
+        el("p",{style:{fontSize:14,color:"rgba(255,255,255,.55)",lineHeight:1.75,maxWidth:400,margin:0}},
+          "Calculate finishing department manpower requirements based on your production plan and operation data."),
+        el("button",{
+          onClick:()=>{setIsEntering(true);setTimeout(()=>{setIsEntering(false);setPage("upload");},2000);},
+          style:{marginTop:6,padding:"14px 44px",background:"linear-gradient(135deg,#E07B39,#c96b28)",
+            color:"#fff",border:"none",borderRadius:50,fontSize:15,fontWeight:700,cursor:"pointer",
+            display:"flex",alignItems:"center",gap:10,boxShadow:"0 8px 30px rgba(224,123,57,.45)",letterSpacing:.5}},
+          "Enter System",el("i",{className:"ti ti-arrow-right",style:{fontSize:17}})
+        ),
+        el("div",{style:{display:"flex",flexDirection:"column",alignItems:"center",gap:10,padding:"14px 32px",marginTop:8,
+          background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.1)",borderRadius:14}},
+          el("span",{style:{fontSize:10,color:"rgba(255,255,255,.3)",textTransform:"uppercase",letterSpacing:3,fontWeight:700}},"Powered by"),
+          el("div",{style:{display:"flex",alignItems:"center",gap:10}},
+            el("img",{src:"https://www.end2end.lk/images/logo-2.png",alt:"End2End Solutions",height:30,
+              style:{filter:"none",opacity:1,background:"rgba(255,255,255,.9)",borderRadius:6,padding:"3px 8px"},
+              onError:e=>{e.target.style.display="none";e.target.nextSibling.style.display="block";}}),
+            el("span",{style:{display:"none",color:"rgba(255,255,255,.8)",fontSize:15,fontWeight:700}},"End2End Solutions")
+          )
+        ),
+        el("span",{style:{fontSize:11,color:"rgba(255,255,255,.18)",fontFamily:"monospace",marginTop:2}},"v2.0 · 2026")
+      )
+    ),
+
+    // ── TOP NAV ───────────────────────────────────────────────────────────────
+    page!=="landing"&&el("div",{style:{background:NAVY,padding:"0 22px",display:"flex",alignItems:"center",justifyContent:"space-between",height:56,boxShadow:"0 2px 8px rgba(0,0,0,.15)",flexShrink:0}},
+      el("div",{style:{display:"flex",alignItems:"center",gap:14}},
+        el("img",{src:"https://www.star.lk/wp-content/uploads/2024/12/star-logo.svg",alt:"Star Garments",height:32,
+          style:{filter:"brightness(0) invert(1)"},onError:ev=>ev.target.style.display="none"}),
+        el("div",{style:{width:1,height:24,background:"rgba(255,255,255,.2)"}}),
+        el("span",{style:{color:"#fff",fontSize:14,fontWeight:600,letterSpacing:".02em"}},"Finishing Manpower Calculator"),
+        (()=>{
+          const envMap={dev:{c:"#0F766E",bg:"#CCFBF1",label:"DEV"},test:{c:"#B45309",bg:"#FEF3C7",label:"TEST"},live:{c:"#B91C1C",bg:"#FEE2E2",label:"LIVE"}};
+          const m=envMap[ENVIRONMENT]||envMap.dev;
+          return el("span",{title:"This copy reads the '"+GH_BRANCH+"' branch",
+            style:{fontSize:10.5,fontWeight:700,color:m.c,background:m.bg,
+              padding:"3px 10px",borderRadius:20,letterSpacing:.6,marginLeft:2}},m.label);
+        })()
+      ),
+      el("div",{style:{display:"flex",alignItems:"center",gap:8}},
+        el("span",{style:{color:"rgba(255,255,255,.25)",fontSize:10}},"Powered by"),
+        el("img",{src:"https://www.end2end.lk/images/logo-2.png",alt:"End2End Solutions",height:24,
+          style:{filter:"none",opacity:1,background:"rgba(255,255,255,.9)",borderRadius:5,padding:"2px 7px"},onError:ev=>ev.target.style.display="none"})
+      )
+    ),
+
+
+
+    // ── TABS BAR ──────────────────────────────────────────────────────────────
+    page!=="landing"&&el("div",{style:{background:NAVY,borderBottom:"3px solid "+ORANGE,display:"flex",padding:"0 22px",gap:2,flexShrink:0}},
+      tabs.map(t=>el("button",{key:t.id,onClick:()=>setPage(t.id),
+        style:{background:page===t.id?ORANGE:"transparent",border:"none",
+          color:page===t.id?"#fff":"rgba(255,255,255,.55)",padding:"10px 16px",cursor:"pointer",
+          display:"flex",alignItems:"center",gap:7,fontSize:13,fontWeight:page===t.id?600:400,
+          borderRadius:"4px 4px 0 0"}},
+        el("i",{className:"ti "+t.icon,style:{fontSize:15}}),t.label
+      ))
+    ),
+
+    // ── PAGE CONTENT ──────────────────────────────────────────────────────────
+    page!=="landing"&&el("div",{style:{padding:22,flex:1,maxWidth:1600,margin:"0 auto",width:"100%"}},
+
+      // UPLOAD
+      page==="upload"&&el("div",{style:{display:"flex",flexDirection:"column",gap:16}},
+        // FR Plan card
+        el(Card,{},
+          el("div",{style:{display:"flex",alignItems:"center",gap:12,marginBottom:16}},
+            el("div",{style:{width:36,height:36,borderRadius:9,background:"#EEF2F8",display:"flex",alignItems:"center",justifyContent:"center"}},
+              el("i",{className:"ti ti-table",style:{fontSize:18,color:NAVY}})),
+            el("div",{},
+              el("p",{style:{fontWeight:700,fontSize:14,color:"#0f172a",margin:0}},"SGL FR Plan"),
+              el("p",{style:{fontSize:12,color:"#64748b",margin:0}},"Main planning file — drives the calculation")
+            )
+          ),
+          el("button",{onClick:loadFRFromGitHub,disabled:ghFrLoading,
+            style:{width:"100%",padding:"12px",marginBottom:14,borderRadius:9,
+              border:"2px solid "+ORANGE,background:ghFrLoading?"#fff7ed":"#fff4ec",
+              cursor:ghFrLoading?"not-allowed":"pointer",display:"flex",alignItems:"center",
+              justifyContent:"center",gap:8,fontSize:13,fontWeight:700,color:ORANGE}},
+            el("i",{className:"ti "+(ghFrLoading?"ti-loader ti-spin":"ti-brand-github"),style:{fontSize:16}}),
+            ghFrLoading?"Loading from GitHub...":"Load Latest FR Plan from GitHub"
+          ),
+          ghFrErr&&el("div",{style:{background:"#fef2f2",border:"0.5px solid #fca5a5",borderRadius:7,padding:"9px 12px",marginBottom:10,fontSize:12,color:"#dc2626"}},
+            el("i",{className:"ti ti-alert-circle",style:{marginRight:6}}),ghFrErr),
+          frChanged&&el("div",{style:{
+            marginBottom:12,borderRadius:9,overflow:"hidden",
+            background:"linear-gradient(135deg,#e0f2fe,#bae6fd)",
+            border:"1px solid #7dd3fc",
+            display:"flex",alignItems:"center",gap:12,padding:"11px 16px"}},
+            el("div",{style:{width:32,height:32,borderRadius:8,background:"#0284c7",
+              display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}},
+              el("i",{className:"ti ti-refresh",style:{fontSize:16,color:"#fff"}})
+            ),
+            el("div",{style:{flex:1}},
+              el("p",{style:{margin:"0 0 2px",fontWeight:700,fontSize:13,color:"#0c4a6e"}},"FR Plan has a new version"),
+              el("p",{style:{margin:0,fontSize:11,color:"#075985"}},"Updated on GitHub — latest version loaded successfully")
+            ),
+            el("button",{onClick:()=>setFrChanged(false),
+              style:{background:"none",border:"none",color:"#0284c7",cursor:"pointer",
+                fontSize:18,lineHeight:1,padding:"0 4px",flexShrink:0}},
+              "×")
+          ),
+          el("p",{style:{textAlign:"center",fontSize:12,color:"#94a3b8",marginBottom:10}},"— or upload manually —"),
+          el("div",{onDragOver:ev=>{ev.preventDefault();setFrDragging(true);},onDragLeave:()=>setFrDragging(false),
+            onDrop:ev=>{ev.preventDefault();setFrDragging(false);const f=ev.dataTransfer.files[0];if(f)loadFRFile(f);},
+            onClick:()=>frRef.current.click(),
+            style:{border:"2px dashed "+(frDragging?ORANGE:"#cbd5e1"),borderRadius:10,padding:"32px 24px",
+              textAlign:"center",cursor:"pointer",background:frDragging?"rgba(224,123,57,.04)":"#f8fafc",transition:"all .15s"}},
+            el("i",{className:"ti ti-file-spreadsheet",style:{fontSize:36,color:frDragging?ORANGE:"#94a3b8",display:"block",marginBottom:10}}),
+            el("p",{style:{margin:"0 0 4px",fontWeight:600,fontSize:13,color:"#334155"}},"Drop SGL_FR_Plan.xlsx here"),
+            el("p",{style:{margin:0,fontSize:12,color:"#94a3b8"}},"or click to browse"),
+            el("input",{ref:frRef,type:"file",accept:".xlsx,.xls",style:{display:"none"},onChange:e=>e.target.files[0]&&loadFRFile(e.target.files[0])})
+          ),
+          frInfo&&!frInfo.error&&el("div",{style:{marginTop:14,background:"#f0fdf4",border:"0.5px solid #bbf7d0",borderRadius:8,padding:"12px 16px",display:"flex",alignItems:"center",gap:10}},
+            el("i",{className:"ti ti-circle-check",style:{fontSize:20,color:"#16a34a"}}),
+            el("div",{},
+              el("p",{style:{margin:"0 0 2px",fontWeight:600,fontSize:13,color:"#166534"}},frInfo.file+" loaded"),
+              el("p",{style:{margin:0,fontSize:12,color:"#166534"}},frInfo.count+" styles · "+frInfo.lines+" lines: "+frInfo.linesList?.join(", "))
+            )
+          ),
+          frInfo?.error&&el("div",{style:{marginTop:14,background:"#fef2f2",border:"0.5px solid #fca5a5",borderRadius:8,padding:12,color:"#dc2626",fontSize:12}},
+            el("i",{className:"ti ti-alert-circle",style:{marginRight:6}}),frInfo.error)
+        ),
+        // OB Data card
+        el(Card,{},
+          el("div",{style:{display:"flex",alignItems:"center",gap:12,marginBottom:16}},
+            el("div",{style:{width:36,height:36,borderRadius:9,background:"#374151",display:"flex",alignItems:"center",justifyContent:"center"}},
+              el("i",{className:"ti ti-clipboard-list",style:{fontSize:18,color:"#fff"}})),
+            el("div",{},
+              el("p",{style:{fontWeight:700,fontSize:14,color:"#0f172a",margin:0}},"Operation Breakdown (OB)"),
+              el("p",{style:{fontSize:12,color:"#64748b",margin:0}},"Maps operations & SMV to styles")
+            )
+          ),
+          el("button",{onClick:loadOBFromGitHub,disabled:obGhLoading,
+            style:{width:"100%",padding:"12px",marginBottom:14,borderRadius:9,
+              border:"2px solid "+(obGhStatus==="loaded"?"#16a34a":obGhStatus?.startsWith("error")?"#dc2626":"#374151"),
+              background:obGhLoading?"#f9f9f9":obGhStatus==="loaded"?"#f0fdf4":obGhStatus?.startsWith("error")?"#fef2f2":"#f8fafc",
+              cursor:obGhLoading?"not-allowed":"pointer",display:"flex",alignItems:"center",
+              justifyContent:"center",gap:8,fontSize:13,fontWeight:700,
+              color:obGhStatus==="loaded"?"#16a34a":obGhStatus?.startsWith("error")?"#dc2626":"#374151"}},
+            el("i",{className:"ti "+(obGhLoading?"ti-loader ti-spin":obGhStatus==="loaded"?"ti-circle-check":obGhStatus?.startsWith("error")?"ti-alert-circle":"ti-brand-github"),style:{fontSize:16}}),
+            obGhLoading?"Loading OB from GitHub...":obGhStatus==="loaded"?"OB Data Loaded ✓":"Load Latest OB Data from GitHub"
+          ),
+          obChanged&&el("div",{style:{
+            marginBottom:12,borderRadius:9,overflow:"hidden",
+            background:"linear-gradient(135deg,#e0f2fe,#bae6fd)",
+            border:"1px solid #7dd3fc",
+            display:"flex",alignItems:"center",gap:12,padding:"11px 16px"}},
+            el("div",{style:{width:32,height:32,borderRadius:8,background:"#0284c7",
+              display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}},
+              el("i",{className:"ti ti-refresh",style:{fontSize:16,color:"#fff"}})
+            ),
+            el("div",{style:{flex:1}},
+              el("p",{style:{margin:"0 0 2px",fontWeight:700,fontSize:13,color:"#0c4a6e"}},"OB Data has a new version"),
+              el("p",{style:{margin:0,fontSize:11,color:"#075985"}},"Updated on GitHub — latest version loaded successfully")
+            ),
+            el("button",{onClick:()=>setObChanged(false),
+              style:{background:"none",border:"none",color:"#0284c7",cursor:"pointer",
+                fontSize:18,lineHeight:1,padding:"0 4px",flexShrink:0}},
+              "×")
+          ),
+          el("p",{style:{textAlign:"center",fontSize:12,color:"#94a3b8",marginBottom:10}},"— or upload manually —"),
+          el("div",{onDragOver:ev=>{ev.preventDefault();setObDragging(true);},onDragLeave:()=>setObDragging(false),
+            onDrop:ev=>{ev.preventDefault();setObDragging(false);
+              const f=ev.dataTransfer.files[0];
+              if(f){const reader=new FileReader();reader.onload=e2=>loadOBFile(new Uint8Array(e2.target.result));reader.readAsArrayBuffer(f);}
+            },
+            onClick:()=>obRef.current.click(),
+            style:{border:"2px dashed "+(obDragging?"#60a5fa":"#cbd5e1"),borderRadius:10,padding:"28px 24px",
+              textAlign:"center",cursor:"pointer",background:obDragging?"rgba(96,165,250,.04)":"#f8fafc",transition:"all .15s"}},
+            el("i",{className:"ti ti-clipboard-list",style:{fontSize:36,color:obDragging?"#60a5fa":"#94a3b8",display:"block",marginBottom:10}}),
+            el("p",{style:{margin:"0 0 4px",fontWeight:600,fontSize:13,color:"#334155"}},"Drop OB file here (.xlsx or .xls)"),
+            el("p",{style:{margin:0,fontSize:12,color:"#94a3b8"}},"or click to browse"),
+            el("input",{ref:obRef,type:"file",accept:".xlsx,.xls",style:{display:"none"},
+              onChange:e=>{if(e.target.files[0]){const f=e.target.files[0];const reader=new FileReader();reader.onload=e2=>loadOBFile(new Uint8Array(e2.target.result));reader.readAsArrayBuffer(f);}}})
+          ),
+          obInfo&&!obInfo.error&&el("div",{style:{marginTop:obChanged?8:14,background:"#f0fdf4",border:"0.5px solid #bbf7d0",borderRadius:8,padding:"12px 16px",display:"flex",alignItems:"center",gap:10}},
+            el("i",{className:"ti ti-circle-check",style:{fontSize:20,color:"#16a34a"}}),
+            el("div",{},
+              el("p",{style:{margin:"0 0 2px",fontWeight:600,fontSize:13,color:"#166534"}},
+                "Loaded: "+obInfo.file+" — "+obInfo.count+" styles in OB file"),
+              el("p",{style:{margin:0,fontSize:11,color:"#15803d"}},
+                "Styles matched to FR Plan shown in Style Manager → Have OB Data")
+            )
+          ),
+          obInfo?.error&&el("div",{style:{marginTop:14,background:"#fef2f2",border:"0.5px solid #fca5a5",borderRadius:8,padding:12,color:"#dc2626",fontSize:12}},
+            el("i",{className:"ti ti-alert-circle",style:{marginRight:6}}),obInfo.error)
+        ),
+        // Navigation buttons
+        (styles.length>0)&&el("div",{style:{display:"flex",gap:12,flexWrap:"wrap"}},
+          el(Btn,{onClick:()=>setPage("stylemanager"),style:{background:NAVY,color:"#fff",padding:"10px 20px"}},
+            el("i",{className:"ti ti-shirt",style:{marginRight:7}}),"Style Manager"),
+          el(Btn,{onClick:()=>setPage("planningboard"),style:{background:"#4338CA",color:"#fff",padding:"10px 20px"}},
+            el("i",{className:"ti ti-layout-kanban",style:{marginRight:7}}),"Planning Board"),
+          el(Btn,{onClick:()=>setPage("calculate"),style:{background:ORANGE,color:"#fff",padding:"10px 20px",fontWeight:700}},
+            el("i",{className:"ti ti-calculator",style:{marginRight:7}}),"Calculate Manpower",el("i",{className:"ti ti-arrow-right",style:{marginLeft:7}}))
+        )
+      ),
+
+      // STYLE MANAGER
+      page==="stylemanager"&&(styles.length===0?el(NoData,{}):
+        el(StyleManagerTab,{styles,obMap,smvConfig,opSelections,setOpSelections})),
+
+      // PLANNING BOARD (view only)
+      page==="planningboard"&&el("div",{style:{display:"flex",flexDirection:"column",gap:14}},
+        styles.length===0?el(NoData,{}):el("div",{},
+          el("div",{style:{display:"flex",gap:10,marginBottom:14,alignItems:"center",flexWrap:"wrap"}},
+            el("span",{style:{fontSize:13,fontWeight:600,color:"#374151"}},"Color by:"),
+            [["style","By Style"],["garment","By Garment"]].map(([v,label])=>
+              el("button",{key:v,onClick:()=>{setColorMode(v);setPbSelectMode(false);setPbSelectedId(null);},
+                style:{padding:"6px 16px",borderRadius:20,cursor:"pointer",fontSize:12,fontWeight:500,
+                  border:colorMode===v&&!pbSelectMode?"2px solid "+NAVY:"1px solid #e2e8f0",
+                  background:colorMode===v&&!pbSelectMode?"#EEF2F8":"#fff",
+                  color:colorMode===v&&!pbSelectMode?NAVY:"#64748b"}},label)
+            ),
+            el("div",{style:{width:1,height:20,background:"#e2e8f0"}}),
+            el("button",{onClick:()=>{setPbSelectMode(m=>!m);setPbSelectedId(null);},
+              style:{padding:"6px 16px",borderRadius:20,cursor:"pointer",fontSize:12,fontWeight:500,
+                display:"flex",alignItems:"center",gap:6,
+                border:pbSelectMode?"2px solid #dc2626":"1px solid #e2e8f0",
+                background:pbSelectMode?"#fef2f2":"#fff",color:pbSelectMode?"#dc2626":"#64748b"}},
+              el("i",{className:"ti ti-calendar-due",style:{fontSize:13}}),
+              "Del. Date View"
+            ),
+            el("div",{style:{width:1,height:20,background:"#e2e8f0"}}),
+            el("div",{style:{display:"flex",alignItems:"center",gap:2,
+              border:"1px solid #e2e8f0",borderRadius:8,overflow:"hidden",marginLeft:"auto"}},
+              el("button",{onClick:()=>setBoardZoom(z=>Math.max(.25,+(z/1.25).toFixed(3))),
+                title:"Zoom out",
+                style:{padding:"5px 10px",border:"none",background:"transparent",
+                  color:"#64748b",fontSize:15,cursor:"pointer",fontWeight:700,lineHeight:1}},"−"),
+              el("span",{style:{fontSize:11,color:"#64748b",padding:"0 4px",
+                minWidth:36,textAlign:"center",fontWeight:500}},Math.round(boardZoom*100)+"%"),
+              el("button",{onClick:()=>setBoardZoom(z=>Math.min(8,+(z*1.25).toFixed(3))),
+                title:"Zoom in",
+                style:{padding:"5px 10px",border:"none",background:"transparent",
+                  color:"#64748b",fontSize:15,cursor:"pointer",fontWeight:700,lineHeight:1}},"+"),
+              el("button",{onClick:()=>setBoardZoom(1),
+                title:"Reset zoom to 100%",
+                style:{padding:"5px 8px",border:"none",borderLeft:"1px solid #e2e8f0",background:"transparent",
+                  color:"#94a3b8",fontSize:11,cursor:"pointer",fontWeight:500,lineHeight:1}},
+                el("i",{className:"ti ti-refresh",style:{fontSize:12}}))
+            )
+          ),
+          // Garment legend — click any type to focus matching styles, dim everything else
+          colorMode==="garment"&&styles.length>0&&(()=>{
+            const usedTypes=[...new Set(styles.map(s=>s.gmtType).filter(Boolean))].sort();
+            return el("div",{style:{background:"#1e293b",padding:"6px 16px",display:"flex",alignItems:"center",
+              gap:4,flexWrap:"wrap",borderRadius:8,marginBottom:10}},
+              el("span",{style:{color:"rgba(255,255,255,.4)",fontSize:10,fontWeight:600,
+                textTransform:"uppercase",letterSpacing:.8,marginRight:6,fontFamily:"'DM Mono',monospace"}},"Legend:"),
+              usedTypes.map(t=>{
+                const active=gmtFocus===t;
+                return el("div",{key:t,onClick:()=>setGmtFocus(f=>f===t?null:t),
+                  title:active?"Click to clear focus":"Click to focus this garment type",
+                  style:{display:"flex",alignItems:"center",gap:4,cursor:"pointer",
+                  padding:"3px 9px",borderRadius:20,
+                  background:active?"rgba(255,255,255,.18)":"rgba(255,255,255,.06)",
+                  border:"0.5px solid "+(active?"rgba(255,255,255,.5)":"rgba(255,255,255,.1)")}},
+                  el("div",{style:{width:9,height:9,borderRadius:"50%",background:getGmtColor(t),flexShrink:0}}),
+                  el("span",{style:{fontSize:10.5,color:active?"#fff":"rgba(255,255,255,.8)",
+                    fontWeight:active?700:400,whiteSpace:"nowrap"}},t)
+                );
+              }),
+              gmtFocus&&el("button",{onClick:()=>setGmtFocus(null),
+                style:{marginLeft:6,padding:"3px 10px",borderRadius:20,border:"0.5px solid rgba(255,255,255,.2)",
+                  background:"transparent",color:"rgba(255,255,255,.5)",fontSize:10,cursor:"pointer",
+                  display:"flex",alignItems:"center",gap:4}},
+                el("i",{className:"ti ti-x",style:{fontSize:11}}),"Clear focus")
+            );
+          })(),
+          el(Card,{style:{padding:0,overflow:"hidden",height:640}},
+            el(ErrorBoundary,{},
+              el(PlanningBoardView,{styles,colorMode,onEdit:null,
+                selectMode:pbSelectMode,selectedId:pbSelectedId,
+                onSelectStyle:id=>setPbSelectedId(p=>p===id?null:id),
+                simMode:false,simFilters:{description:true},obMap,highlightId:null,
+                lineSimMode:false,lineSimFilters:{description:true},lineSimThreshold:80,
+                lineSimSelectedId:null,onLineSimSelect:null,
+                alwaysSimFilters:{description:true,mcCode:false,gmtType:false},
+                simGroups:null,boardZoom,setBoardZoom,dateRangeOverride:null,gmtFocus})
+            )
+          )
+        )
+      ),
+
+      // CALCULATE
+      page==="calculate"&&el(CalculateTab,{styles,obMap,smvConfig,opSelections,settings,
+        calcFromDate,setCalcFromDate,calcToDate,setCalcToDate,
+        calcActiveStyles,setCalcActiveStyles,calcOverrides,setCalcOverrides,
+        calcResults,setCalcResults,calcCalcState,setCalcCalcState,
+        calcResultView,setCalcResultView,calcExpandedOps,setCalcExpandedOps,
+        calcUseDefaultEff,setCalcUseDefaultEff}),
+
+      // SETTINGS
+      page==="settings"&&el(SettingsTab,{smvConfig,setSmvConfig,settings,setSettings})
+    )
+  );
+}
+
+ReactDOM.render(el("div",{},el(App,{})),document.getElementById("root"));
+</script>
+</body>
+</html>
