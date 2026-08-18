@@ -1870,7 +1870,7 @@ function dayByDayFromChunks(chunks){
   return byDay;
 }
 
-function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={}}){
+function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={},initialSelectedMonthKeys=[]}){
   // Deduplicate initialStyles by id to prevent ghost duplicates
   const dedupedInitial=initialStyles.filter((s,i,arr)=>arr.findIndex(x=>x.id===s.id)===i);
   const [styles,setStyles]=useState(dedupedInitial.map(s=>({...s})));
@@ -1888,6 +1888,46 @@ function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={}}){
   const [showHistory,setShowHistory]=useState(false);
   const [colorMode,setColorMode]=useState("garment");
   const [gmtFocus,setGmtFocus]=useState(null);
+  // Inherits the Planning Board's month selection as a starting point when
+  // the canvas opens, then lives independently — changing it here never
+  // affects the Planning Board tab's own filter, and vice versa.
+  const [canvasSelectedMonthKeys,setCanvasSelectedMonthKeys]=useState(initialSelectedMonthKeys);
+  const [canvasMonthFilterOpen,setCanvasMonthFilterOpen]=useState(false);
+  const canvasMonthOptions=useMemo(()=>{
+    const seen=new Map();
+    styles.forEach(s=>{
+      if(!s.startDate||!s.endDate)return;
+      let cur=new Date(s.startDate.getFullYear(),s.startDate.getMonth(),1);
+      const end=new Date(s.endDate.getFullYear(),s.endDate.getMonth(),1);
+      while(cur<=end){
+        const key=cur.getFullYear()+"-"+cur.getMonth();
+        if(!seen.has(key))seen.set(key,{year:cur.getFullYear(),month:cur.getMonth(),
+          label:MONS[cur.getMonth()]+" "+cur.getFullYear(),key,earliestStart:null});
+        const rec=seen.get(key);
+        if(!rec.earliestStart||s.startDate<rec.earliestStart)rec.earliestStart=s.startDate;
+        cur=new Date(cur.getFullYear(),cur.getMonth()+1,1);
+      }
+    });
+    return[...seen.values()].sort((a,b)=>a.year-b.year||a.month-b.month);
+  },[styles]);
+  // This never removes anything from view — it only marks which blocks fall
+  // outside the focused months, so they can be dimmed rather than hidden.
+  // A hidden block could still shift during an edit without you seeing it;
+  // a dimmed one always stays visible, just quieter.
+  const canvasDateFilter=useMemo(()=>{
+    if(canvasSelectedMonthKeys.length===0)return null;
+    const selected=canvasMonthOptions.filter(m=>canvasSelectedMonthKeys.includes(m.key));
+    if(selected.length===0)return null;
+    let from=null,to=null;
+    selected.forEach(m=>{
+      const calFrom=new Date(m.year,m.month,1);
+      const calTo=new Date(m.year,m.month+1,0,23,59,59);
+      const effFrom=(m.earliestStart&&m.earliestStart>calFrom)?m.earliestStart:calFrom;
+      if(!from||effFrom<from)from=effFrom;
+      if(!to||calTo>to)to=calTo;
+    });
+    return{from,to};
+  },[canvasSelectedMonthKeys,canvasMonthOptions]);
   // Powers the "By Consecutive Similarity" color mode — reuses the same
   // pairwise comparison already used by Line Similarity mode.
   const consecSimData=useMemo(()=>buildLineSimilarities(styles,obMap,
@@ -2652,6 +2692,49 @@ function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={}}){
         tBtn("ti-palette","By "+(colorMode==="style"?"Style":colorMode==="garment"?"Garment":"Consecutive Sim."),
           ()=>setColorMode(m=>m==="style"?"garment":m==="garment"?"consecutive":"style"),colorMode!=="style"),
         tBtn("ti-history","History ("+changeLog.length+")",()=>setShowHistory(true),changeLog.length>0),
+        el("div",{style:{position:"relative"}},
+          el("button",{onClick:()=>setCanvasMonthFilterOpen(o=>!o),
+            title:"Dim months you're not focused on — nothing is ever hidden, so shifts elsewhere are always visible",
+            style:{padding:"6px 12px",border:"0.5px solid "+(canvasDateFilter?"rgba(251,191,36,.7)":"rgba(255,255,255,.2)"),
+              background:canvasDateFilter?"rgba(251,191,36,.15)":"transparent",
+              color:canvasDateFilter?"#fde68a":"rgba(255,255,255,.65)",
+              borderRadius:6,cursor:"pointer",fontSize:11.5,fontWeight:500,
+              display:"flex",alignItems:"center",gap:5}},
+            el("i",{className:"ti ti-calendar-month",style:{fontSize:13}}),
+            canvasSelectedMonthKeys.length===0?"All Months":
+              canvasSelectedMonthKeys.length===1?canvasMonthOptions.find(m=>m.key===canvasSelectedMonthKeys[0])?.label:
+              canvasSelectedMonthKeys.length+" months focused",
+            el("i",{className:"ti ti-chevron-down",style:{fontSize:10,opacity:.6}})
+          ),
+          canvasMonthFilterOpen&&el("div",{style:{
+            position:"absolute",top:"110%",left:0,zIndex:600,background:"#fff",borderRadius:10,
+            boxShadow:"0 12px 32px rgba(0,0,0,.3)",border:"0.5px solid #e2e8f0",
+            minWidth:220,padding:8,maxHeight:340,overflowY:"auto"}},
+            el("button",{onClick:()=>setCanvasSelectedMonthKeys([]),
+              style:{width:"100%",textAlign:"left",padding:"8px 10px",border:"none",
+                background:canvasSelectedMonthKeys.length===0?"#f1f5f9":"transparent",borderRadius:6,cursor:"pointer",
+                fontSize:12.5,fontWeight:canvasSelectedMonthKeys.length===0?700:400,color:"#0f172a",
+                display:"flex",alignItems:"center",gap:6}},
+              el("i",{className:"ti ti-list",style:{fontSize:14,color:"#64748b"}}),"All Months (nothing dimmed)"),
+            el("div",{style:{height:1,background:"#e2e8f0",margin:"4px 0"}}),
+            canvasMonthOptions.map(m=>{
+              const active=canvasSelectedMonthKeys.includes(m.key);
+              return el("label",{key:m.key,style:{width:"100%",display:"flex",alignItems:"center",gap:8,
+                  padding:"8px 10px",borderRadius:6,cursor:"pointer",
+                  background:active?"#fef3c7":"transparent"}},
+                el("input",{type:"checkbox",checked:active,
+                  onChange:()=>setCanvasSelectedMonthKeys(prev=>active?prev.filter(k=>k!==m.key):[...prev,m.key]),
+                  style:{width:13,height:13,accentColor:"#d97706",cursor:"pointer",flexShrink:0}}),
+                el("i",{className:"ti ti-calendar",style:{fontSize:14,color:active?"#d97706":"#64748b"}}),
+                el("span",{style:{fontSize:12.5,fontWeight:active?700:400,color:"#0f172a"}},m.label)
+              );
+            }),
+            canvasMonthOptions.length>0&&el("div",{style:{marginTop:6,paddingTop:6,borderTop:"1px solid #e2e8f0"}},
+              el("button",{onClick:()=>setCanvasMonthFilterOpen(false),
+                style:{width:"100%",padding:"7px 0",border:"none",borderRadius:6,cursor:"pointer",
+                  background:ORANGE,color:"#fff",fontSize:12,fontWeight:600}},"Done"))
+          )
+        ),
         el("div",{style:{width:1,height:24,background:"rgba(255,255,255,.2)"}}),
         tBtn("ti-arrows-join","Merge Mode",toggleMergeMode,mergeMode),
         mergeMode&&mergeSelected.length>=2&&tBtn("ti-check","Confirm Merge",()=>doMerge(false),true),
@@ -3020,7 +3103,7 @@ function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={}}){
             onDoubleClick:e=>{e.stopPropagation();if(!s.locked&&!mergeMode)setEditModal(s);},
             style:{position:"absolute",left,top:top+4,width,height:cRowH-8,
               background:conflictIdSet.has(s.id)?"repeating-linear-gradient(45deg,rgba(220,38,38,.85) 0px,rgba(220,38,38,.85) 8px,rgba(0,0,0,.7) 8px,rgba(0,0,0,.7) 16px)":color,
-              opacity:isDragging||isResizing?0.35:canvasLineSimMode&&canvasLineSimSelId&&!clsSelected&&!clsPasses?0.1:conflictIdSet.has(s.id)?0.75:(gmtFocus&&s.gmtType!==gmtFocus)?0.28:1,
+              opacity:isDragging||isResizing?0.35:canvasLineSimMode&&canvasLineSimSelId&&!clsSelected&&!clsPasses?0.1:conflictIdSet.has(s.id)?0.75:(gmtFocus&&s.gmtType!==gmtFocus)?0.28:(canvasDateFilter&&!(s.endDate>=canvasDateFilter.from&&s.startDate<=canvasDateFilter.to))?0.15:1,
               transition:"opacity .2s",
               cursor:canvasLineSimMode?"pointer":mergeMode?"pointer":s.locked?"default":"grab",
               boxShadow:clsSelected?"0 0 0 3px #fff,0 0 0 5px #7c3aed,0 4px 20px rgba(124,58,237,.5)":
@@ -5461,7 +5544,7 @@ function App(){
     display:"flex",flexDirection:"column",
     overflow:isLanding||isBoardPage?"hidden":"visible"}},
     canvasOpen&&el(ErrorBoundary,{key:"ce-"+fileKey},
-      el(CanvasEditor,{initialStyles:styles,onConfirm:handleConfirm,onCancel:()=>setCanvasOpen(false),key:fileKey+"_canvas",obMap})
+      el(CanvasEditor,{initialStyles:styles,onConfirm:handleConfirm,onCancel:()=>setCanvasOpen(false),key:fileKey+"_canvas",obMap,initialSelectedMonthKeys:selectedMonthKeys})
     ),
 
     // Top nav — hidden on landing page
