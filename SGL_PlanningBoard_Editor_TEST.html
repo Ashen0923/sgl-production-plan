@@ -1849,7 +1849,7 @@ function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={}}){
   const [histIdx,setHistIdx]=useState(0);
   const [changeLog,setChangeLog]=useState([]);
   const [showHistory,setShowHistory]=useState(false);
-  const [colorMode,setColorMode]=useState("style");
+  const [colorMode,setColorMode]=useState("garment");
   const [conflictErrors,setConflictErrors]=useState([]);
   // Derived from `styles` directly (not a separately-tracked state) so it's always correct —
   // including right when the "Check Dates" toggle is first turned on, before any edit is made.
@@ -2643,12 +2643,12 @@ function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={}}){
         el("div",{style:{width:1,height:24,background:"rgba(255,255,255,.2)"}}),
         el("div",{style:{display:"flex",alignItems:"center",gap:0,
           border:"0.5px solid rgba(255,255,255,.2)",borderRadius:16,overflow:"hidden"}},
-          el("button",{onClick:()=>setCanvasZoom(z=>Math.max(.5,+(z-.1).toFixed(1))),
+          el("button",{onClick:()=>setCanvasZoom(z=>Math.max(.03,+(z/1.25).toFixed(4))),
             style:{padding:"4px 9px",border:"none",background:"transparent",
               color:"rgba(255,255,255,.7)",fontSize:15,cursor:"pointer",fontWeight:700,lineHeight:1}},"−"),
           el("span",{style:{fontSize:10,color:"rgba(255,255,255,.5)",padding:"0 2px",
             minWidth:32,textAlign:"center"}},Math.round(canvasZoom*100)+"%"),
-          el("button",{onClick:()=>setCanvasZoom(z=>Math.min(1.5,+(z+.1).toFixed(1))),
+          el("button",{onClick:()=>setCanvasZoom(z=>Math.min(1.5,+(z*1.25).toFixed(4))),
             style:{padding:"4px 9px",border:"none",background:"transparent",
               color:"rgba(255,255,255,.7)",fontSize:15,cursor:"pointer",fontWeight:700,lineHeight:1}},"+")
         ),
