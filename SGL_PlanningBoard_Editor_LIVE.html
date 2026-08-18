@@ -1186,7 +1186,7 @@ function PlanningBoardView({styles,colorMode,onEdit,selectMode,selectedId,onSele
     const dir=e.deltaY<0?1.12:1/1.12;
     wheelTriggeredRef.current=true;
     setBoardZoom(z=>{
-      const nz=Math.max(.25,Math.min(8,+(z*dir).toFixed(4)));
+      const nz=Math.max(.03,Math.min(8,+(z*dir).toFixed(4)));
       // After React re-renders at the new zoom, restore the same time-under-cursor position.
       requestAnimationFrame(()=>{
         const el3=scrollRef.current;if(!el3)return;
@@ -5469,7 +5469,7 @@ function App(){
           // Zoom controls in nav
           page==="board"&&el("div",{style:{display:"flex",alignItems:"center",gap:2,
             border:"0.5px solid rgba(255,255,255,.2)",borderRadius:8,overflow:"hidden",background:"rgba(255,255,255,.05)"}},
-            el("button",{onClick:()=>setBoardZoom(z=>Math.max(.25,+(z/1.25).toFixed(3))),
+            el("button",{onClick:()=>setBoardZoom(z=>Math.max(.03,+(z/1.25).toFixed(4))),
               title:"Zoom out",
               style:{padding:"5px 10px",border:"none",background:"transparent",
                 color:"rgba(255,255,255,.7)",fontSize:15,cursor:"pointer",fontWeight:700,lineHeight:1}},"−"),
