@@ -1851,6 +1851,7 @@ function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={}}){
   const [changeLog,setChangeLog]=useState([]);
   const [showHistory,setShowHistory]=useState(false);
   const [colorMode,setColorMode]=useState("garment");
+  const [gmtFocus,setGmtFocus]=useState(null);
   const [conflictErrors,setConflictErrors]=useState([]);
   // Derived from `styles` directly (not a separately-tracked state) so it's always correct —
   // including right when the "Check Dates" toggle is first turned on, before any edit is made.
@@ -2734,6 +2735,35 @@ function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={}}){
       )
     ),
 
+    // Garment color legend (shown only in garment color mode) — click any
+    // type to focus matching blocks, dimming everything else.
+    colorMode==="garment"&&styles.length>0&&(()=>{
+      const usedTypes=[...new Set(styles.map(s=>s.gmtType).filter(Boolean))].sort();
+      return el("div",{style:{background:"#1e293b",padding:"6px 18px",display:"flex",alignItems:"center",
+        gap:4,flexWrap:"wrap",borderBottom:"1px solid #334155"}},
+        el("span",{style:{color:"rgba(255,255,255,.4)",fontSize:10,fontWeight:600,
+          textTransform:"uppercase",letterSpacing:.8,marginRight:6,fontFamily:"'DM Mono',monospace"}},"Legend:"),
+        usedTypes.map(t=>{
+          const active=gmtFocus===t;
+          return el("div",{key:t,onClick:()=>setGmtFocus(f=>f===t?null:t),
+            title:active?"Click to clear focus":"Click to focus this garment type",
+            style:{display:"flex",alignItems:"center",gap:4,cursor:"pointer",
+            padding:"3px 9px",borderRadius:20,
+            background:active?"rgba(255,255,255,.18)":"rgba(255,255,255,.06)",
+            border:"0.5px solid "+(active?"rgba(255,255,255,.5)":"rgba(255,255,255,.1)")}},
+            el("div",{style:{width:9,height:9,borderRadius:"50%",background:getGmtColor(t),flexShrink:0}}),
+            el("span",{style:{fontSize:10.5,color:active?"#fff":"rgba(255,255,255,.8)",
+              fontWeight:active?700:400,whiteSpace:"nowrap"}},t)
+          );
+        }),
+        gmtFocus&&el("button",{onClick:()=>setGmtFocus(null),
+          style:{marginLeft:6,padding:"3px 10px",borderRadius:20,border:"0.5px solid rgba(255,255,255,.2)",
+            background:"transparent",color:"rgba(255,255,255,.5)",fontSize:10,cursor:"pointer",
+            display:"flex",alignItems:"center",gap:4}},
+          el("i",{className:"ti ti-x",style:{fontSize:11}}),"Clear focus")
+      );
+    })(),
+
     // Merge mode banner
     mergeMode&&el("div",{style:{background:"#1e3a5f",borderBottom:"1px solid #2563eb",
       padding:"7px 18px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}},
@@ -2934,7 +2964,7 @@ function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={}}){
             onDoubleClick:e=>{e.stopPropagation();if(!s.locked&&!mergeMode)setEditModal(s);},
             style:{position:"absolute",left,top:top+4,width,height:cRowH-8,
               background:conflictIdSet.has(s.id)?"repeating-linear-gradient(45deg,rgba(220,38,38,.85) 0px,rgba(220,38,38,.85) 8px,rgba(0,0,0,.7) 8px,rgba(0,0,0,.7) 16px)":color,
-              opacity:isDragging||isResizing?0.35:canvasLineSimMode&&canvasLineSimSelId&&!clsSelected&&!clsPasses?0.1:conflictIdSet.has(s.id)?0.75:1,
+              opacity:isDragging||isResizing?0.35:canvasLineSimMode&&canvasLineSimSelId&&!clsSelected&&!clsPasses?0.1:conflictIdSet.has(s.id)?0.75:(gmtFocus&&s.gmtType!==gmtFocus)?0.28:1,
               transition:"opacity .2s",
               cursor:canvasLineSimMode?"pointer":mergeMode?"pointer":s.locked?"default":"grab",
               boxShadow:clsSelected?"0 0 0 3px #fff,0 0 0 5px #7c3aed,0 4px 20px rgba(124,58,237,.5)":
