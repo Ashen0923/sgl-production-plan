@@ -1074,6 +1074,38 @@ function buildLineSimilarityForStyle(selectedStyle,allStyles,obMap,filters){
   return result;
 }
 
+// ── Consecutive Similarity coloring ─────────────────────────────────────
+// Reuses the exact same pairwise similarity calc already used elsewhere —
+// this just buckets each style's similarity to the PREVIOUS style on its
+// own line into four clearly distinct shades, instead of a percentage label.
+function consecutiveBucketColor(pct){
+  if(pct===null||pct===undefined)return"#6b7280";// grey — no comparable data
+  if(pct>=80)return"#14532d";// strong match — deep green
+  if(pct>=50)return"#16a34a";// medium match — medium green
+  if(pct>=20)return"#4ade80";// light match — light green
+  return"#6b7280";// below 20% — grey
+}
+function buildConsecutiveColorMap(styles,simData){
+  const byLine={};
+  styles.forEach(s=>{if(!byLine[s.line])byLine[s.line]=[];byLine[s.line].push(s);});
+  const colorMap={};
+  Object.values(byLine).forEach(lineStyles=>{
+    const sorted=[...lineStyles].sort((a,b)=>a.startDate-b.startDate);
+    sorted.forEach((s,i)=>{
+      let pct;
+      if(i===0){
+        // First style on the line has nothing before it to compare — borrow
+        // the second style's color instead of showing an uninformative grey.
+        pct=sorted.length>1&&simData[sorted[1].id]?simData[sorted[1].id].pct:null;
+      }else{
+        pct=simData[s.id]?simData[s.id].pct:null;
+      }
+      colorMap[s.id]=consecutiveBucketColor(pct);
+    });
+  });
+  return colorMap;
+}
+
 // Build similarity groups: cluster styles with >=90% op name similarity
 function buildSimGroups(styles,obMap){
   const palette=["#0891b2","#059669","#7c3aed","#b45309","#0369a1","#be185d",
@@ -1140,6 +1172,10 @@ function PlanningBoardView({styles,colorMode,onEdit,selectMode,selectedId,onSele
   // Always-on consecutive similarity data (no color, just labels)
   const alwaysSimData=useMemo(()=>buildLineSimilarities(styles,obMap,alwaysSimFilters),
     [styles,obMap,alwaysSimFilters]);
+  // Powers "By Consecutive Similarity" in the Planning Board tab — reuses
+  // the same buckets/logic already built for the Canvas Editor.
+  const consecutiveColorMap=useMemo(()=>buildConsecutiveColorMap(styles,alwaysSimData),
+    [styles,alwaysSimData]);
 
   const lineSimData=useMemo(()=>{
     if(!lineSimMode||!lineSimSelectedId)return{};
@@ -1250,6 +1286,7 @@ function PlanningBoardView({styles,colorMode,onEdit,selectMode,selectedId,onSele
   function getColor(s){
     if(colorMode==="garment")return getGmtColor(s.gmtType);
     if(colorMode==="simgroup"&&simGroups)return simGroups.colorMap[s.id]||"#4B5563";
+    if(colorMode==="consecutive")return consecutiveColorMap[s.id]||"#6b7280";
     return s.styleColor;
   }
 
@@ -1834,7 +1871,7 @@ function dayByDayFromChunks(chunks){
   return byDay;
 }
 
-function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={}}){
+function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={},initialSelectedMonthKeys=[]}){
   // Deduplicate initialStyles by id to prevent ghost duplicates
   const dedupedInitial=initialStyles.filter((s,i,arr)=>arr.findIndex(x=>x.id===s.id)===i);
   const [styles,setStyles]=useState(dedupedInitial.map(s=>({...s})));
@@ -1852,6 +1889,52 @@ function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={}}){
   const [showHistory,setShowHistory]=useState(false);
   const [colorMode,setColorMode]=useState("garment");
   const [gmtFocus,setGmtFocus]=useState(null);
+  // Inherits the Planning Board's month selection as a starting point when
+  // the canvas opens, then lives independently — changing it here never
+  // affects the Planning Board tab's own filter, and vice versa.
+  const [canvasSelectedMonthKeys,setCanvasSelectedMonthKeys]=useState(initialSelectedMonthKeys);
+  const [canvasMonthFilterOpen,setCanvasMonthFilterOpen]=useState(false);
+  const canvasMonthOptions=useMemo(()=>{
+    const seen=new Map();
+    styles.forEach(s=>{
+      if(!s.startDate||!s.endDate)return;
+      let cur=new Date(s.startDate.getFullYear(),s.startDate.getMonth(),1);
+      const end=new Date(s.endDate.getFullYear(),s.endDate.getMonth(),1);
+      while(cur<=end){
+        const key=cur.getFullYear()+"-"+cur.getMonth();
+        if(!seen.has(key))seen.set(key,{year:cur.getFullYear(),month:cur.getMonth(),
+          label:MONS[cur.getMonth()]+" "+cur.getFullYear(),key,earliestStart:null});
+        const rec=seen.get(key);
+        if(!rec.earliestStart||s.startDate<rec.earliestStart)rec.earliestStart=s.startDate;
+        cur=new Date(cur.getFullYear(),cur.getMonth()+1,1);
+      }
+    });
+    return[...seen.values()].sort((a,b)=>a.year-b.year||a.month-b.month);
+  },[styles]);
+  // This never removes anything from view — it only marks which blocks fall
+  // outside the focused months, so they can be dimmed rather than hidden.
+  // A hidden block could still shift during an edit without you seeing it;
+  // a dimmed one always stays visible, just quieter.
+  const canvasDateFilter=useMemo(()=>{
+    if(canvasSelectedMonthKeys.length===0)return null;
+    const selected=canvasMonthOptions.filter(m=>canvasSelectedMonthKeys.includes(m.key));
+    if(selected.length===0)return null;
+    let from=null,to=null;
+    selected.forEach(m=>{
+      const calFrom=new Date(m.year,m.month,1);
+      const calTo=new Date(m.year,m.month+1,0,23,59,59);
+      const effFrom=(m.earliestStart&&m.earliestStart>calFrom)?m.earliestStart:calFrom;
+      if(!from||effFrom<from)from=effFrom;
+      if(!to||calTo>to)to=calTo;
+    });
+    return{from,to};
+  },[canvasSelectedMonthKeys,canvasMonthOptions]);
+  // Powers the "By Consecutive Similarity" color mode — reuses the same
+  // pairwise comparison already used by Line Similarity mode.
+  const consecSimData=useMemo(()=>buildLineSimilarities(styles,obMap,
+    {description:true,mcCode:false,gmtType:false}),[styles,obMap]);
+  const consecutiveColorMap=useMemo(()=>buildConsecutiveColorMap(styles,consecSimData),
+    [styles,consecSimData]);
   const [conflictErrors,setConflictErrors]=useState([]);
   // Derived from `styles` directly (not a separately-tracked state) so it's always correct —
   // including right when the "Check Dates" toggle is first turned on, before any edit is made.
@@ -1932,6 +2015,7 @@ function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={}}){
   function getColor(s){
     if(colorMode==="garment")return getGmtColor(s.gmtType);
     if(colorMode==="simgroup"&&simGroups)return simGroups.colorMap[s.id]||"#4B5563";
+    if(colorMode==="consecutive")return consecutiveColorMap[s.id]||"#6b7280";
     return s.styleColor;
   }
   function pushHistory(ns,np){
@@ -2606,8 +2690,52 @@ function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={}}){
         tBtn("ti-arrow-back-up","Undo",undo),tBtn("ti-arrow-forward-up","Redo",redo),
         el("div",{style:{width:1,height:24,background:"rgba(255,255,255,.2)"}}),
         tBtn("ti-plus","Add Style",()=>setAddModal(true)),
-        tBtn("ti-palette","By "+(colorMode==="style"?"Style":"Garment"),()=>setColorMode(m=>m==="style"?"garment":"style"),colorMode==="garment"),
+        tBtn("ti-palette","By "+(colorMode==="style"?"Style":colorMode==="garment"?"Garment":"Consecutive Sim."),
+          ()=>setColorMode(m=>m==="style"?"garment":m==="garment"?"consecutive":"style"),colorMode!=="style"),
         tBtn("ti-history","History ("+changeLog.length+")",()=>setShowHistory(true),changeLog.length>0),
+        el("div",{style:{position:"relative"}},
+          el("button",{onClick:()=>setCanvasMonthFilterOpen(o=>!o),
+            title:"Dim months you're not focused on — nothing is ever hidden, so shifts elsewhere are always visible",
+            style:{padding:"6px 12px",border:"0.5px solid "+(canvasDateFilter?"rgba(251,191,36,.7)":"rgba(255,255,255,.2)"),
+              background:canvasDateFilter?"rgba(251,191,36,.15)":"transparent",
+              color:canvasDateFilter?"#fde68a":"rgba(255,255,255,.65)",
+              borderRadius:6,cursor:"pointer",fontSize:11.5,fontWeight:500,
+              display:"flex",alignItems:"center",gap:5}},
+            el("i",{className:"ti ti-calendar-month",style:{fontSize:13}}),
+            canvasSelectedMonthKeys.length===0?"All Months":
+              canvasSelectedMonthKeys.length===1?canvasMonthOptions.find(m=>m.key===canvasSelectedMonthKeys[0])?.label:
+              canvasSelectedMonthKeys.length+" months focused",
+            el("i",{className:"ti ti-chevron-down",style:{fontSize:10,opacity:.6}})
+          ),
+          canvasMonthFilterOpen&&el("div",{style:{
+            position:"absolute",top:"110%",left:0,zIndex:600,background:"#fff",borderRadius:10,
+            boxShadow:"0 12px 32px rgba(0,0,0,.3)",border:"0.5px solid #e2e8f0",
+            minWidth:220,padding:8,maxHeight:340,overflowY:"auto"}},
+            el("button",{onClick:()=>setCanvasSelectedMonthKeys([]),
+              style:{width:"100%",textAlign:"left",padding:"8px 10px",border:"none",
+                background:canvasSelectedMonthKeys.length===0?"#f1f5f9":"transparent",borderRadius:6,cursor:"pointer",
+                fontSize:12.5,fontWeight:canvasSelectedMonthKeys.length===0?700:400,color:"#0f172a",
+                display:"flex",alignItems:"center",gap:6}},
+              el("i",{className:"ti ti-list",style:{fontSize:14,color:"#64748b"}}),"All Months (nothing dimmed)"),
+            el("div",{style:{height:1,background:"#e2e8f0",margin:"4px 0"}}),
+            canvasMonthOptions.map(m=>{
+              const active=canvasSelectedMonthKeys.includes(m.key);
+              return el("label",{key:m.key,style:{width:"100%",display:"flex",alignItems:"center",gap:8,
+                  padding:"8px 10px",borderRadius:6,cursor:"pointer",
+                  background:active?"#fef3c7":"transparent"}},
+                el("input",{type:"checkbox",checked:active,
+                  onChange:()=>setCanvasSelectedMonthKeys(prev=>active?prev.filter(k=>k!==m.key):[...prev,m.key]),
+                  style:{width:13,height:13,accentColor:"#d97706",cursor:"pointer",flexShrink:0}}),
+                el("i",{className:"ti ti-calendar",style:{fontSize:14,color:active?"#d97706":"#64748b"}}),
+                el("span",{style:{fontSize:12.5,fontWeight:active?700:400,color:"#0f172a"}},m.label)
+              );
+            }),
+            canvasMonthOptions.length>0&&el("div",{style:{marginTop:6,paddingTop:6,borderTop:"1px solid #e2e8f0"}},
+              el("button",{onClick:()=>setCanvasMonthFilterOpen(false),
+                style:{width:"100%",padding:"7px 0",border:"none",borderRadius:6,cursor:"pointer",
+                  background:ORANGE,color:"#fff",fontSize:12,fontWeight:600}},"Done"))
+          )
+        ),
         el("div",{style:{width:1,height:24,background:"rgba(255,255,255,.2)"}}),
         tBtn("ti-arrows-join","Merge Mode",toggleMergeMode,mergeMode),
         mergeMode&&mergeSelected.length>=2&&tBtn("ti-check","Confirm Merge",()=>doMerge(false),true),
@@ -2763,6 +2891,18 @@ function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={}}){
           el("i",{className:"ti ti-x",style:{fontSize:11}}),"Clear focus")
       );
     })(),
+
+    // Consecutive Similarity legend — explains the four shades
+    colorMode==="consecutive"&&el("div",{style:{background:"#1e293b",padding:"6px 18px",
+      display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",borderBottom:"1px solid #334155"}},
+      el("span",{style:{color:"rgba(255,255,255,.4)",fontSize:10,fontWeight:600,
+        textTransform:"uppercase",letterSpacing:.8,fontFamily:"'DM Mono',monospace"}},"Consecutive similarity:"),
+      [["#14532d","Strong (80%+)"],["#16a34a","Medium (50–80%)"],["#4ade80","Light (20–50%)"],["#6b7280","Below 20% / no data"]]
+        .map(([c,label])=>el("div",{key:label,style:{display:"flex",alignItems:"center",gap:5}},
+          el("div",{style:{width:11,height:11,borderRadius:3,background:c,flexShrink:0}}),
+          el("span",{style:{fontSize:10.5,color:"rgba(255,255,255,.75)"}},label)
+        ))
+    ),
 
     // Merge mode banner
     mergeMode&&el("div",{style:{background:"#1e3a5f",borderBottom:"1px solid #2563eb",
@@ -2964,7 +3104,7 @@ function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={}}){
             onDoubleClick:e=>{e.stopPropagation();if(!s.locked&&!mergeMode)setEditModal(s);},
             style:{position:"absolute",left,top:top+4,width,height:cRowH-8,
               background:conflictIdSet.has(s.id)?"repeating-linear-gradient(45deg,rgba(220,38,38,.85) 0px,rgba(220,38,38,.85) 8px,rgba(0,0,0,.7) 8px,rgba(0,0,0,.7) 16px)":color,
-              opacity:isDragging||isResizing?0.35:canvasLineSimMode&&canvasLineSimSelId&&!clsSelected&&!clsPasses?0.1:conflictIdSet.has(s.id)?0.75:(gmtFocus&&s.gmtType!==gmtFocus)?0.28:1,
+              opacity:isDragging||isResizing?0.35:canvasLineSimMode&&canvasLineSimSelId&&!clsSelected&&!clsPasses?0.1:conflictIdSet.has(s.id)?0.75:(gmtFocus&&s.gmtType!==gmtFocus)?0.28:(canvasDateFilter&&!(s.endDate>=canvasDateFilter.from&&s.startDate<=canvasDateFilter.to))?0.15:1,
               transition:"opacity .2s",
               cursor:canvasLineSimMode?"pointer":mergeMode?"pointer":s.locked?"default":"grab",
               boxShadow:clsSelected?"0 0 0 3px #fff,0 0 0 5px #7c3aed,0 4px 20px rgba(124,58,237,.5)":
@@ -5102,12 +5242,15 @@ function App(){
   // Which slice of the data to DISPLAY on the read-only Planning Board — purely a view filter.
   // The full `styles` array (all months) is always what's edited, saved, and exported; this only
   // narrows what's shown on screen. null = show everything.
-  const [boardDateFilter,setBoardDateFilter]=useState(null); // {from:Date,to:Date,label:string}
+  // Now a multi-select: which month keys ("YYYY-M") are currently checked.
+  const [selectedMonthKeys,setSelectedMonthKeys]=useState([]);
   const [monthFilterOpen,setMonthFilterOpen]=useState(false);
   // Auto-detect which calendar months are actually present in the uploaded data, so the
   // dropdown can offer them directly (e.g. "September 2026") instead of a blank date picker.
+  // Also tracks each month's REAL earliest start date among styles that touch it, so
+  // selecting a month doesn't show empty leading days before the data actually begins.
   const boardMonthOptions=useMemo(()=>{
-    const seen=new Map(); // "YYYY-M" -> {year,month,label}
+    const seen=new Map(); // "YYYY-M" -> {year,month,label,key,earliestStart}
     styles.forEach(s=>{
       if(!s.startDate||!s.endDate)return;
       let cur=new Date(s.startDate.getFullYear(),s.startDate.getMonth(),1);
@@ -5115,12 +5258,31 @@ function App(){
       while(cur<=end){
         const key=cur.getFullYear()+"-"+cur.getMonth();
         if(!seen.has(key))seen.set(key,{year:cur.getFullYear(),month:cur.getMonth(),
-          label:MONS[cur.getMonth()]+" "+cur.getFullYear()});
+          label:MONS[cur.getMonth()]+" "+cur.getFullYear(),key,earliestStart:null});
+        const rec=seen.get(key);
+        if(!rec.earliestStart||s.startDate<rec.earliestStart)rec.earliestStart=s.startDate;
         cur=new Date(cur.getFullYear(),cur.getMonth()+1,1);
       }
     });
     return[...seen.values()].sort((a,b)=>a.year-b.year||a.month-b.month);
   },[styles]);
+  // The actual filter used everywhere else — derived from whichever months are checked.
+  // Combines them into one range, each month clipped to its own real earliest data date.
+  const boardDateFilter=useMemo(()=>{
+    if(selectedMonthKeys.length===0)return null;
+    const selected=boardMonthOptions.filter(m=>selectedMonthKeys.includes(m.key));
+    if(selected.length===0)return null;
+    let from=null,to=null;
+    selected.forEach(m=>{
+      const calFrom=new Date(m.year,m.month,1);
+      const calTo=new Date(m.year,m.month+1,0,23,59,59);
+      const effFrom=(m.earliestStart&&m.earliestStart>calFrom)?m.earliestStart:calFrom;
+      if(!from||effFrom<from)from=effFrom;
+      if(!to||calTo>to)to=calTo;
+    });
+    const label=selected.length===1?selected[0].label:selected.length+" months selected";
+    return{from,to,label};
+  },[selectedMonthKeys,boardMonthOptions]);
   // Which garment type (if any) is focused via clicking a legend chip — matching styles stay
   // full-color/sharp, everything else dims. Read-only Planning Board only, not the canvas.
   const [gmtFocus,setGmtFocus]=useState(null);
@@ -5383,7 +5545,7 @@ function App(){
     display:"flex",flexDirection:"column",
     overflow:isLanding||isBoardPage?"hidden":"visible"}},
     canvasOpen&&el(ErrorBoundary,{key:"ce-"+fileKey},
-      el(CanvasEditor,{initialStyles:styles,onConfirm:handleConfirm,onCancel:()=>setCanvasOpen(false),key:fileKey+"_canvas",obMap})
+      el(CanvasEditor,{initialStyles:styles,onConfirm:handleConfirm,onCancel:()=>setCanvasOpen(false),key:fileKey+"_canvas",obMap,initialSelectedMonthKeys:selectedMonthKeys})
     ),
 
     // Top nav — hidden on landing page
@@ -5430,30 +5592,35 @@ function App(){
               boardDateFilter?boardDateFilter.label:"All Months",
               el("i",{className:"ti ti-chevron-down",style:{fontSize:11,opacity:.6}})
             ),
-            monthFilterOpen&&el("div",{onMouseLeave:()=>setMonthFilterOpen(false),style:{
+            monthFilterOpen&&el("div",{style:{
               position:"absolute",top:"110%",left:0,zIndex:200,background:"#fff",borderRadius:10,
               boxShadow:"0 12px 32px rgba(0,0,0,.25)",border:"0.5px solid #e2e8f0",
-              minWidth:200,padding:8,maxHeight:340,overflowY:"auto"}},
-              el("button",{onClick:()=>{setBoardDateFilter(null);setMonthFilterOpen(false);},
+              minWidth:220,padding:8,maxHeight:380,overflowY:"auto"}},
+              el("button",{onClick:()=>{setSelectedMonthKeys([]);},
                 style:{width:"100%",textAlign:"left",padding:"8px 10px",border:"none",
-                  background:!boardDateFilter?"#f1f5f9":"transparent",borderRadius:6,cursor:"pointer",
-                  fontSize:12.5,fontWeight:!boardDateFilter?700:400,color:"#0f172a",
+                  background:selectedMonthKeys.length===0?"#f1f5f9":"transparent",borderRadius:6,cursor:"pointer",
+                  fontSize:12.5,fontWeight:selectedMonthKeys.length===0?700:400,color:"#0f172a",
                   display:"flex",alignItems:"center",gap:6}},
                 el("i",{className:"ti ti-list",style:{fontSize:14,color:"#64748b"}}),"All Months"),
               el("div",{style:{height:1,background:"#e2e8f0",margin:"4px 0"}}),
+              el("p",{style:{padding:"2px 10px 6px",fontSize:10,color:"#94a3b8"}},"Tick one or more months"),
               boardMonthOptions.map(m=>{
-                const from=new Date(m.year,m.month,1);
-                const to=new Date(m.year,m.month+1,0,23,59,59);
-                const active=boardDateFilter&&boardDateFilter.label===m.label;
-                return el("button",{key:m.label,onClick:()=>{
-                  setBoardDateFilter({from,to,label:m.label});setMonthFilterOpen(false);},
-                  style:{width:"100%",textAlign:"left",padding:"8px 10px",border:"none",
-                    background:active?"#fef3c7":"transparent",borderRadius:6,cursor:"pointer",
-                    fontSize:12.5,fontWeight:active?700:400,color:"#0f172a",
-                    display:"flex",alignItems:"center",gap:6}},
-                  el("i",{className:"ti ti-calendar",style:{fontSize:14,color:active?"#d97706":"#64748b"}}),m.label);
+                const active=selectedMonthKeys.includes(m.key);
+                return el("label",{key:m.key,style:{width:"100%",display:"flex",alignItems:"center",gap:8,
+                    padding:"8px 10px",borderRadius:6,cursor:"pointer",
+                    background:active?"#fef3c7":"transparent"}},
+                  el("input",{type:"checkbox",checked:active,
+                    onChange:()=>setSelectedMonthKeys(prev=>active?prev.filter(k=>k!==m.key):[...prev,m.key]),
+                    style:{width:13,height:13,accentColor:"#d97706",cursor:"pointer",flexShrink:0}}),
+                  el("i",{className:"ti ti-calendar",style:{fontSize:14,color:active?"#d97706":"#64748b"}}),
+                  el("span",{style:{fontSize:12.5,fontWeight:active?700:400,color:"#0f172a"}},m.label)
+                );
               }),
-              boardMonthOptions.length===0&&el("p",{style:{padding:10,fontSize:11.5,color:"#94a3b8"}},"No dated styles loaded.")
+              boardMonthOptions.length===0&&el("p",{style:{padding:10,fontSize:11.5,color:"#94a3b8"}},"No dated styles loaded."),
+              boardMonthOptions.length>0&&el("div",{style:{marginTop:6,paddingTop:6,borderTop:"1px solid #e2e8f0"}},
+                el("button",{onClick:()=>setMonthFilterOpen(false),
+                  style:{width:"100%",padding:"7px 0",border:"none",borderRadius:6,cursor:"pointer",
+                    background:ORANGE,color:"#fff",fontSize:12,fontWeight:600}},"Done"))
             )
           ),
           // Del Date View toggle in nav
@@ -5600,7 +5767,7 @@ function App(){
           el("p",{style:{margin:"0 0 10px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,.4)",
             textTransform:"uppercase",letterSpacing:1}},"Color Mode"),
           el("div",{style:{display:"flex",flexDirection:"column",gap:6}},
-            [["style","By Style","ti-palette"],["garment","By Garment","ti-shirt"],["simgroup","By Similarity Group","ti-circles-relation"]].map(([m,lbl,icon])=>
+            [["style","By Style","ti-palette"],["garment","By Garment","ti-shirt"],["simgroup","By Similarity Group","ti-circles-relation"],["consecutive","By Consecutive Similarity","ti-arrows-shuffle"]].map(([m,lbl,icon])=>
               el("button",{key:m,onClick:()=>setColorMode(m),style:{
                 padding:"8px 12px",border:"0.5px solid "+(colorMode===m?"rgba(255,255,255,.5)":"rgba(255,255,255,.1)"),
                 background:colorMode===m?"rgba(255,255,255,.12)":"transparent",
@@ -5682,6 +5849,19 @@ function App(){
           el("i",{className:"ti ti-x",style:{fontSize:11}}),"Clear focus")
       );
     })(),
+
+    // Consecutive Similarity legend (shown only in that color mode)
+    page!=="landing"&&colorMode==="consecutive"&&styles.length>0&&el("div",{style:{
+      background:"#1e293b",padding:"6px 22px",display:"flex",alignItems:"center",gap:14,
+      flexWrap:"wrap",borderBottom:"1px solid #334155"}},
+      el("span",{style:{color:"rgba(255,255,255,.4)",fontSize:10,fontWeight:600,
+        textTransform:"uppercase",letterSpacing:.8,fontFamily:"'DM Mono',monospace"}},"Consecutive similarity:"),
+      [["#14532d","Strong (80%+)"],["#16a34a","Medium (50–80%)"],["#4ade80","Light (20–50%)"],["#6b7280","Below 20% / no data"]]
+        .map(([c,label])=>el("div",{key:label,style:{display:"flex",alignItems:"center",gap:5}},
+          el("div",{style:{width:11,height:11,borderRadius:3,background:c,flexShrink:0}}),
+          el("span",{style:{fontSize:10.5,color:"rgba(255,255,255,.75)"}},label)
+        ))
+    ),
 
     // Similarity filter panel (shown when simShowPanel is true on board page)
     page!=="landing"&&page==="board"&&simShowPanel&&el("div",{style:{background:"#1a2744",borderBottom:"1px solid #2d3f6e",padding:"0 22px"}},
