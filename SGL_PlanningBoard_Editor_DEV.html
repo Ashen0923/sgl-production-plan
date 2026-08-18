@@ -5766,6 +5766,19 @@ function App(){
       );
     })(),
 
+    // Consecutive Similarity legend (shown only in that color mode)
+    page!=="landing"&&colorMode==="consecutive"&&styles.length>0&&el("div",{style:{
+      background:"#1e293b",padding:"6px 22px",display:"flex",alignItems:"center",gap:14,
+      flexWrap:"wrap",borderBottom:"1px solid #334155"}},
+      el("span",{style:{color:"rgba(255,255,255,.4)",fontSize:10,fontWeight:600,
+        textTransform:"uppercase",letterSpacing:.8,fontFamily:"'DM Mono',monospace"}},"Consecutive similarity:"),
+      [["#14532d","Strong (80%+)"],["#16a34a","Medium (50–80%)"],["#4ade80","Light (20–50%)"],["#6b7280","Below 20% / no data"]]
+        .map(([c,label])=>el("div",{key:label,style:{display:"flex",alignItems:"center",gap:5}},
+          el("div",{style:{width:11,height:11,borderRadius:3,background:c,flexShrink:0}}),
+          el("span",{style:{fontSize:10.5,color:"rgba(255,255,255,.75)"}},label)
+        ))
+    ),
+
     // Similarity filter panel (shown when simShowPanel is true on board page)
     page!=="landing"&&page==="board"&&simShowPanel&&el("div",{style:{background:"#1a2744",borderBottom:"1px solid #2d3f6e",padding:"0 22px"}},
       // Sub-tabs
