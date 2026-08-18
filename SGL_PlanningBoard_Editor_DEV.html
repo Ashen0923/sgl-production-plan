@@ -5158,12 +5158,15 @@ function App(){
   // Which slice of the data to DISPLAY on the read-only Planning Board — purely a view filter.
   // The full `styles` array (all months) is always what's edited, saved, and exported; this only
   // narrows what's shown on screen. null = show everything.
-  const [boardDateFilter,setBoardDateFilter]=useState(null); // {from:Date,to:Date,label:string}
+  // Now a multi-select: which month keys ("YYYY-M") are currently checked.
+  const [selectedMonthKeys,setSelectedMonthKeys]=useState([]);
   const [monthFilterOpen,setMonthFilterOpen]=useState(false);
   // Auto-detect which calendar months are actually present in the uploaded data, so the
   // dropdown can offer them directly (e.g. "September 2026") instead of a blank date picker.
+  // Also tracks each month's REAL earliest start date among styles that touch it, so
+  // selecting a month doesn't show empty leading days before the data actually begins.
   const boardMonthOptions=useMemo(()=>{
-    const seen=new Map(); // "YYYY-M" -> {year,month,label}
+    const seen=new Map(); // "YYYY-M" -> {year,month,label,key,earliestStart}
     styles.forEach(s=>{
       if(!s.startDate||!s.endDate)return;
       let cur=new Date(s.startDate.getFullYear(),s.startDate.getMonth(),1);
@@ -5171,12 +5174,31 @@ function App(){
       while(cur<=end){
         const key=cur.getFullYear()+"-"+cur.getMonth();
         if(!seen.has(key))seen.set(key,{year:cur.getFullYear(),month:cur.getMonth(),
-          label:MONS[cur.getMonth()]+" "+cur.getFullYear()});
+          label:MONS[cur.getMonth()]+" "+cur.getFullYear(),key,earliestStart:null});
+        const rec=seen.get(key);
+        if(!rec.earliestStart||s.startDate<rec.earliestStart)rec.earliestStart=s.startDate;
         cur=new Date(cur.getFullYear(),cur.getMonth()+1,1);
       }
     });
     return[...seen.values()].sort((a,b)=>a.year-b.year||a.month-b.month);
   },[styles]);
+  // The actual filter used everywhere else — derived from whichever months are checked.
+  // Combines them into one range, each month clipped to its own real earliest data date.
+  const boardDateFilter=useMemo(()=>{
+    if(selectedMonthKeys.length===0)return null;
+    const selected=boardMonthOptions.filter(m=>selectedMonthKeys.includes(m.key));
+    if(selected.length===0)return null;
+    let from=null,to=null;
+    selected.forEach(m=>{
+      const calFrom=new Date(m.year,m.month,1);
+      const calTo=new Date(m.year,m.month+1,0,23,59,59);
+      const effFrom=(m.earliestStart&&m.earliestStart>calFrom)?m.earliestStart:calFrom;
+      if(!from||effFrom<from)from=effFrom;
+      if(!to||calTo>to)to=calTo;
+    });
+    const label=selected.length===1?selected[0].label:selected.length+" months selected";
+    return{from,to,label};
+  },[selectedMonthKeys,boardMonthOptions]);
   // Which garment type (if any) is focused via clicking a legend chip — matching styles stay
   // full-color/sharp, everything else dims. Read-only Planning Board only, not the canvas.
   const [gmtFocus,setGmtFocus]=useState(null);
@@ -5486,30 +5508,35 @@ function App(){
               boardDateFilter?boardDateFilter.label:"All Months",
               el("i",{className:"ti ti-chevron-down",style:{fontSize:11,opacity:.6}})
             ),
-            monthFilterOpen&&el("div",{onMouseLeave:()=>setMonthFilterOpen(false),style:{
+            monthFilterOpen&&el("div",{style:{
               position:"absolute",top:"110%",left:0,zIndex:200,background:"#fff",borderRadius:10,
               boxShadow:"0 12px 32px rgba(0,0,0,.25)",border:"0.5px solid #e2e8f0",
-              minWidth:200,padding:8,maxHeight:340,overflowY:"auto"}},
-              el("button",{onClick:()=>{setBoardDateFilter(null);setMonthFilterOpen(false);},
+              minWidth:220,padding:8,maxHeight:380,overflowY:"auto"}},
+              el("button",{onClick:()=>{setSelectedMonthKeys([]);},
                 style:{width:"100%",textAlign:"left",padding:"8px 10px",border:"none",
-                  background:!boardDateFilter?"#f1f5f9":"transparent",borderRadius:6,cursor:"pointer",
-                  fontSize:12.5,fontWeight:!boardDateFilter?700:400,color:"#0f172a",
+                  background:selectedMonthKeys.length===0?"#f1f5f9":"transparent",borderRadius:6,cursor:"pointer",
+                  fontSize:12.5,fontWeight:selectedMonthKeys.length===0?700:400,color:"#0f172a",
                   display:"flex",alignItems:"center",gap:6}},
                 el("i",{className:"ti ti-list",style:{fontSize:14,color:"#64748b"}}),"All Months"),
               el("div",{style:{height:1,background:"#e2e8f0",margin:"4px 0"}}),
+              el("p",{style:{padding:"2px 10px 6px",fontSize:10,color:"#94a3b8"}},"Tick one or more months"),
               boardMonthOptions.map(m=>{
-                const from=new Date(m.year,m.month,1);
-                const to=new Date(m.year,m.month+1,0,23,59,59);
-                const active=boardDateFilter&&boardDateFilter.label===m.label;
-                return el("button",{key:m.label,onClick:()=>{
-                  setBoardDateFilter({from,to,label:m.label});setMonthFilterOpen(false);},
-                  style:{width:"100%",textAlign:"left",padding:"8px 10px",border:"none",
-                    background:active?"#fef3c7":"transparent",borderRadius:6,cursor:"pointer",
-                    fontSize:12.5,fontWeight:active?700:400,color:"#0f172a",
-                    display:"flex",alignItems:"center",gap:6}},
-                  el("i",{className:"ti ti-calendar",style:{fontSize:14,color:active?"#d97706":"#64748b"}}),m.label);
+                const active=selectedMonthKeys.includes(m.key);
+                return el("label",{key:m.key,style:{width:"100%",display:"flex",alignItems:"center",gap:8,
+                    padding:"8px 10px",borderRadius:6,cursor:"pointer",
+                    background:active?"#fef3c7":"transparent"}},
+                  el("input",{type:"checkbox",checked:active,
+                    onChange:()=>setSelectedMonthKeys(prev=>active?prev.filter(k=>k!==m.key):[...prev,m.key]),
+                    style:{width:13,height:13,accentColor:"#d97706",cursor:"pointer",flexShrink:0}}),
+                  el("i",{className:"ti ti-calendar",style:{fontSize:14,color:active?"#d97706":"#64748b"}}),
+                  el("span",{style:{fontSize:12.5,fontWeight:active?700:400,color:"#0f172a"}},m.label)
+                );
               }),
-              boardMonthOptions.length===0&&el("p",{style:{padding:10,fontSize:11.5,color:"#94a3b8"}},"No dated styles loaded.")
+              boardMonthOptions.length===0&&el("p",{style:{padding:10,fontSize:11.5,color:"#94a3b8"}},"No dated styles loaded."),
+              boardMonthOptions.length>0&&el("div",{style:{marginTop:6,paddingTop:6,borderTop:"1px solid #e2e8f0"}},
+                el("button",{onClick:()=>setMonthFilterOpen(false),
+                  style:{width:"100%",padding:"7px 0",border:"none",borderRadius:6,cursor:"pointer",
+                    background:ORANGE,color:"#fff",fontSize:12,fontWeight:600}},"Done"))
             )
           ),
           // Del Date View toggle in nav
