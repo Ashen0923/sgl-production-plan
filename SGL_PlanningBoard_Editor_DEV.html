@@ -288,7 +288,7 @@ function parseFRPlan(sheet){
     merchant:col("Merchant"),
     mergeGroup:col("SGL_MergeGroup"),// optional merge tag column
     prodStartTime:colAny("Production start time","Production Start Time","PRODUCTION START TIME","Prod Start Time","Production Start"),
-    prodEndTime:colAny("Production end time","Production End Time","PRODUCTION END TIME","Prod End Time","Production End")
+    prodEndTime:colAny("Production end time","Production End Time","PRODUCTION END TIME","Prod End Time","Production End","Prod Finish Time","Production Finish Time")
   };
   const hasTimeCols=C.prodStartTime>=0&&C.prodEndTime>=0;
 
