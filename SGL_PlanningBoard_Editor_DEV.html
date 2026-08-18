@@ -1073,6 +1073,38 @@ function buildLineSimilarityForStyle(selectedStyle,allStyles,obMap,filters){
   return result;
 }
 
+// ── Consecutive Similarity coloring ─────────────────────────────────────
+// Reuses the exact same pairwise similarity calc already used elsewhere —
+// this just buckets each style's similarity to the PREVIOUS style on its
+// own line into four clearly distinct shades, instead of a percentage label.
+function consecutiveBucketColor(pct){
+  if(pct===null||pct===undefined)return"#6b7280";// grey — no comparable data
+  if(pct>=80)return"#14532d";// strong match — deep green
+  if(pct>=50)return"#16a34a";// medium match — medium green
+  if(pct>=20)return"#4ade80";// light match — light green
+  return"#6b7280";// below 20% — grey
+}
+function buildConsecutiveColorMap(styles,simData){
+  const byLine={};
+  styles.forEach(s=>{if(!byLine[s.line])byLine[s.line]=[];byLine[s.line].push(s);});
+  const colorMap={};
+  Object.values(byLine).forEach(lineStyles=>{
+    const sorted=[...lineStyles].sort((a,b)=>a.startDate-b.startDate);
+    sorted.forEach((s,i)=>{
+      let pct;
+      if(i===0){
+        // First style on the line has nothing before it to compare — borrow
+        // the second style's color instead of showing an uninformative grey.
+        pct=sorted.length>1&&simData[sorted[1].id]?simData[sorted[1].id].pct:null;
+      }else{
+        pct=simData[s.id]?simData[s.id].pct:null;
+      }
+      colorMap[s.id]=consecutiveBucketColor(pct);
+    });
+  });
+  return colorMap;
+}
+
 // Build similarity groups: cluster styles with >=90% op name similarity
 function buildSimGroups(styles,obMap){
   const palette=["#0891b2","#059669","#7c3aed","#b45309","#0369a1","#be185d",
@@ -1851,6 +1883,12 @@ function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={}}){
   const [showHistory,setShowHistory]=useState(false);
   const [colorMode,setColorMode]=useState("garment");
   const [gmtFocus,setGmtFocus]=useState(null);
+  // Powers the "By Consecutive Similarity" color mode — reuses the same
+  // pairwise comparison already used by Line Similarity mode.
+  const consecSimData=useMemo(()=>buildLineSimilarities(styles,obMap,
+    {description:true,mcCode:false,gmtType:false}),[styles,obMap]);
+  const consecutiveColorMap=useMemo(()=>buildConsecutiveColorMap(styles,consecSimData),
+    [styles,consecSimData]);
   const [conflictErrors,setConflictErrors]=useState([]);
   // Derived from `styles` directly (not a separately-tracked state) so it's always correct —
   // including right when the "Check Dates" toggle is first turned on, before any edit is made.
@@ -1931,6 +1969,7 @@ function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={}}){
   function getColor(s){
     if(colorMode==="garment")return getGmtColor(s.gmtType);
     if(colorMode==="simgroup"&&simGroups)return simGroups.colorMap[s.id]||"#4B5563";
+    if(colorMode==="consecutive")return consecutiveColorMap[s.id]||"#6b7280";
     return s.styleColor;
   }
   function pushHistory(ns,np){
@@ -2605,7 +2644,8 @@ function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={}}){
         tBtn("ti-arrow-back-up","Undo",undo),tBtn("ti-arrow-forward-up","Redo",redo),
         el("div",{style:{width:1,height:24,background:"rgba(255,255,255,.2)"}}),
         tBtn("ti-plus","Add Style",()=>setAddModal(true)),
-        tBtn("ti-palette","By "+(colorMode==="style"?"Style":"Garment"),()=>setColorMode(m=>m==="style"?"garment":"style"),colorMode==="garment"),
+        tBtn("ti-palette","By "+(colorMode==="style"?"Style":colorMode==="garment"?"Garment":"Consecutive Sim."),
+          ()=>setColorMode(m=>m==="style"?"garment":m==="garment"?"consecutive":"style"),colorMode!=="style"),
         tBtn("ti-history","History ("+changeLog.length+")",()=>setShowHistory(true),changeLog.length>0),
         el("div",{style:{width:1,height:24,background:"rgba(255,255,255,.2)"}}),
         tBtn("ti-arrows-join","Merge Mode",toggleMergeMode,mergeMode),
@@ -2762,6 +2802,18 @@ function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={}}){
           el("i",{className:"ti ti-x",style:{fontSize:11}}),"Clear focus")
       );
     })(),
+
+    // Consecutive Similarity legend — explains the four shades
+    colorMode==="consecutive"&&el("div",{style:{background:"#1e293b",padding:"6px 18px",
+      display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",borderBottom:"1px solid #334155"}},
+      el("span",{style:{color:"rgba(255,255,255,.4)",fontSize:10,fontWeight:600,
+        textTransform:"uppercase",letterSpacing:.8,fontFamily:"'DM Mono',monospace"}},"Consecutive similarity:"),
+      [["#14532d","Strong (80%+)"],["#16a34a","Medium (50–80%)"],["#4ade80","Light (20–50%)"],["#6b7280","Below 20% / no data"]]
+        .map(([c,label])=>el("div",{key:label,style:{display:"flex",alignItems:"center",gap:5}},
+          el("div",{style:{width:11,height:11,borderRadius:3,background:c,flexShrink:0}}),
+          el("span",{style:{fontSize:10.5,color:"rgba(255,255,255,.75)"}},label)
+        ))
+    ),
 
     // Merge mode banner
     mergeMode&&el("div",{style:{background:"#1e3a5f",borderBottom:"1px solid #2563eb",
