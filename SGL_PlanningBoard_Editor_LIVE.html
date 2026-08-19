@@ -1078,14 +1078,15 @@ function buildLineSimilarityForStyle(selectedStyle,allStyles,obMap,filters){
 // Reuses the exact same pairwise similarity calc already used elsewhere —
 // this just buckets each style's similarity to the PREVIOUS style on its
 // own line into four clearly distinct shades, instead of a percentage label.
-function consecutiveBucketColor(pct){
+function consecutiveBucketColor(pct,thresholds){
+  const t=thresholds||{strong:100,medium:90,light:80};
   if(pct===null||pct===undefined)return"#6b7280";// grey — no comparable data
-  if(pct>=80)return"#14532d";// strong match — deep green
-  if(pct>=50)return"#16a34a";// medium match — medium green
-  if(pct>=20)return"#4ade80";// light match — light green
-  return"#6b7280";// below 20% — grey
+  if(pct>=t.strong)return"#14532d";// strong match — deep green
+  if(pct>=t.medium)return"#16a34a";// medium match — medium green
+  if(pct>=t.light)return"#4ade80";// light match — light green
+  return"#6b7280";// below the light threshold — grey
 }
-function buildConsecutiveColorMap(styles,simData){
+function buildConsecutiveColorMap(styles,simData,thresholds){
   const byLine={};
   styles.forEach(s=>{if(!byLine[s.line])byLine[s.line]=[];byLine[s.line].push(s);});
   const colorMap={};
@@ -1100,7 +1101,7 @@ function buildConsecutiveColorMap(styles,simData){
       }else{
         pct=simData[s.id]?simData[s.id].pct:null;
       }
-      colorMap[s.id]=consecutiveBucketColor(pct);
+      colorMap[s.id]=consecutiveBucketColor(pct,thresholds);
     });
   });
   return colorMap;
@@ -1162,7 +1163,7 @@ function buildRefIds(styles){
 
 
 // ─── PlanningBoardView ────────────────────────────────────────────────────────
-function PlanningBoardView({styles,colorMode,onEdit,selectMode,selectedId,onSelectStyle,
+function PlanningBoardView({styles,colorMode,onEdit,selectMode,selectedId,onSelectStyle,consecThresholds,
   simMode=false,simFilters={description:true},obMap={},highlightId=null,
   lineSimMode=false,lineSimFilters={description:true},lineSimThreshold=80,
   lineSimSelectedId=null,onLineSimSelect=null,alwaysSimFilters={description:true,mcCode:false,gmtType:false},
@@ -1174,8 +1175,8 @@ function PlanningBoardView({styles,colorMode,onEdit,selectMode,selectedId,onSele
     [styles,obMap,alwaysSimFilters]);
   // Powers "By Consecutive Similarity" in the Planning Board tab — reuses
   // the same buckets/logic already built for the Canvas Editor.
-  const consecutiveColorMap=useMemo(()=>buildConsecutiveColorMap(styles,alwaysSimData),
-    [styles,alwaysSimData]);
+  const consecutiveColorMap=useMemo(()=>buildConsecutiveColorMap(styles,alwaysSimData,consecThresholds),
+    [styles,alwaysSimData,consecThresholds]);
 
   const lineSimData=useMemo(()=>{
     if(!lineSimMode||!lineSimSelectedId)return{};
@@ -1871,7 +1872,7 @@ function dayByDayFromChunks(chunks){
   return byDay;
 }
 
-function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={},initialSelectedMonthKeys=[]}){
+function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={},initialSelectedMonthKeys=[],consecThresholds}){
   // Deduplicate initialStyles by id to prevent ghost duplicates
   const dedupedInitial=initialStyles.filter((s,i,arr)=>arr.findIndex(x=>x.id===s.id)===i);
   const [styles,setStyles]=useState(dedupedInitial.map(s=>({...s})));
@@ -1933,8 +1934,8 @@ function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={},initialSelected
   // pairwise comparison already used by Line Similarity mode.
   const consecSimData=useMemo(()=>buildLineSimilarities(styles,obMap,
     {description:true,mcCode:false,gmtType:false}),[styles,obMap]);
-  const consecutiveColorMap=useMemo(()=>buildConsecutiveColorMap(styles,consecSimData),
-    [styles,consecSimData]);
+  const consecutiveColorMap=useMemo(()=>buildConsecutiveColorMap(styles,consecSimData,consecThresholds),
+    [styles,consecSimData,consecThresholds]);
   const [conflictErrors,setConflictErrors]=useState([]);
   // Derived from `styles` directly (not a separately-tracked state) so it's always correct —
   // including right when the "Check Dates" toggle is first turned on, before any edit is made.
@@ -2892,17 +2893,22 @@ function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={},initialSelected
       );
     })(),
 
-    // Consecutive Similarity legend — explains the four shades
-    colorMode==="consecutive"&&el("div",{style:{background:"#1e293b",padding:"6px 18px",
-      display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",borderBottom:"1px solid #334155"}},
-      el("span",{style:{color:"rgba(255,255,255,.4)",fontSize:10,fontWeight:600,
-        textTransform:"uppercase",letterSpacing:.8,fontFamily:"'DM Mono',monospace"}},"Consecutive similarity:"),
-      [["#14532d","Strong (80%+)"],["#16a34a","Medium (50–80%)"],["#4ade80","Light (20–50%)"],["#6b7280","Below 20% / no data"]]
-        .map(([c,label])=>el("div",{key:label,style:{display:"flex",alignItems:"center",gap:5}},
-          el("div",{style:{width:11,height:11,borderRadius:3,background:c,flexShrink:0}}),
-          el("span",{style:{fontSize:10.5,color:"rgba(255,255,255,.75)"}},label)
-        ))
-    ),
+    // Consecutive Similarity legend — mirrors whatever thresholds are set on
+    // the Planning Board tab; this view never edits them itself.
+    colorMode==="consecutive"&&(()=>{
+      const t=consecThresholds||{strong:100,medium:90,light:80};
+      return el("div",{style:{background:"#1e293b",padding:"6px 18px",
+        display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",borderBottom:"1px solid #334155"}},
+        el("span",{style:{color:"rgba(255,255,255,.4)",fontSize:10,fontWeight:600,
+          textTransform:"uppercase",letterSpacing:.8,fontFamily:"'DM Mono',monospace"}},"Consecutive similarity:"),
+        [["#14532d","Strong ("+t.strong+"%+)"],["#16a34a","Medium ("+t.medium+"–"+t.strong+"%)"],
+         ["#4ade80","Light ("+t.light+"–"+t.medium+"%)"],["#6b7280","Below "+t.light+"% / no data"]]
+          .map(([c,label])=>el("div",{key:label,style:{display:"flex",alignItems:"center",gap:5}},
+            el("div",{style:{width:11,height:11,borderRadius:3,background:c,flexShrink:0}}),
+            el("span",{style:{fontSize:10.5,color:"rgba(255,255,255,.75)"}},label)
+          ))
+      );
+    })(),
 
     // Merge mode banner
     mergeMode&&el("div",{style:{background:"#1e3a5f",borderBottom:"1px solid #2563eb",
@@ -5244,6 +5250,10 @@ function App(){
   // narrows what's shown on screen. null = show everything.
   // Now a multi-select: which month keys ("YYYY-M") are currently checked.
   const [selectedMonthKeys,setSelectedMonthKeys]=useState([]);
+  // Shared Consecutive Similarity thresholds — one setting used by both the
+  // Planning Board tab and the Canvas Editor. Always resets to these
+  // defaults on reload; nothing here is saved anywhere.
+  const [consecThresholds,setConsecThresholds]=useState({strong:100,medium:90,light:80});
   const [monthFilterOpen,setMonthFilterOpen]=useState(false);
   // Auto-detect which calendar months are actually present in the uploaded data, so the
   // dropdown can offer them directly (e.g. "September 2026") instead of a blank date picker.
@@ -5545,7 +5555,7 @@ function App(){
     display:"flex",flexDirection:"column",
     overflow:isLanding||isBoardPage?"hidden":"visible"}},
     canvasOpen&&el(ErrorBoundary,{key:"ce-"+fileKey},
-      el(CanvasEditor,{initialStyles:styles,onConfirm:handleConfirm,onCancel:()=>setCanvasOpen(false),key:fileKey+"_canvas",obMap,initialSelectedMonthKeys:selectedMonthKeys})
+      el(CanvasEditor,{initialStyles:styles,onConfirm:handleConfirm,onCancel:()=>setCanvasOpen(false),key:fileKey+"_canvas",obMap,initialSelectedMonthKeys:selectedMonthKeys,consecThresholds})
     ),
 
     // Top nav — hidden on landing page
@@ -5850,17 +5860,49 @@ function App(){
       );
     })(),
 
-    // Consecutive Similarity legend (shown only in that color mode)
+    // Consecutive Similarity legend (shown only in that color mode) — labels
+    // and swatches always reflect the current thresholds, which are editable
+    // right here and shared with the Canvas Editor automatically.
     page!=="landing"&&colorMode==="consecutive"&&styles.length>0&&el("div",{style:{
       background:"#1e293b",padding:"6px 22px",display:"flex",alignItems:"center",gap:14,
       flexWrap:"wrap",borderBottom:"1px solid #334155"}},
       el("span",{style:{color:"rgba(255,255,255,.4)",fontSize:10,fontWeight:600,
         textTransform:"uppercase",letterSpacing:.8,fontFamily:"'DM Mono',monospace"}},"Consecutive similarity:"),
-      [["#14532d","Strong (80%+)"],["#16a34a","Medium (50–80%)"],["#4ade80","Light (20–50%)"],["#6b7280","Below 20% / no data"]]
-        .map(([c,label])=>el("div",{key:label,style:{display:"flex",alignItems:"center",gap:5}},
-          el("div",{style:{width:11,height:11,borderRadius:3,background:c,flexShrink:0}}),
-          el("span",{style:{fontSize:10.5,color:"rgba(255,255,255,.75)"}},label)
-        ))
+      el("div",{style:{display:"flex",alignItems:"center",gap:5}},
+        el("div",{style:{width:11,height:11,borderRadius:3,background:"#14532d",flexShrink:0}}),
+        el("span",{style:{fontSize:10.5,color:"rgba(255,255,255,.75)"}},"Strong ≥"),
+        el("input",{type:"number",min:0,max:100,value:consecThresholds.strong,
+          onChange:e=>setConsecThresholds(t=>({...t,strong:Math.max(t.medium,Math.min(100,+e.target.value||0))})),
+          style:{width:44,padding:"2px 4px",borderRadius:4,border:"1px solid rgba(255,255,255,.2)",
+            background:"rgba(255,255,255,.08)",color:"#fff",fontSize:10.5,fontFamily:"'DM Mono',monospace"}}),
+        el("span",{style:{fontSize:10.5,color:"rgba(255,255,255,.5)"}},"%")
+      ),
+      el("div",{style:{display:"flex",alignItems:"center",gap:5}},
+        el("div",{style:{width:11,height:11,borderRadius:3,background:"#16a34a",flexShrink:0}}),
+        el("span",{style:{fontSize:10.5,color:"rgba(255,255,255,.75)"}},"Medium ≥"),
+        el("input",{type:"number",min:0,max:100,value:consecThresholds.medium,
+          onChange:e=>setConsecThresholds(t=>({...t,medium:Math.max(t.light,Math.min(t.strong,+e.target.value||0))})),
+          style:{width:44,padding:"2px 4px",borderRadius:4,border:"1px solid rgba(255,255,255,.2)",
+            background:"rgba(255,255,255,.08)",color:"#fff",fontSize:10.5,fontFamily:"'DM Mono',monospace"}}),
+        el("span",{style:{fontSize:10.5,color:"rgba(255,255,255,.5)"}},"%")
+      ),
+      el("div",{style:{display:"flex",alignItems:"center",gap:5}},
+        el("div",{style:{width:11,height:11,borderRadius:3,background:"#4ade80",flexShrink:0}}),
+        el("span",{style:{fontSize:10.5,color:"rgba(255,255,255,.75)"}},"Light ≥"),
+        el("input",{type:"number",min:0,max:100,value:consecThresholds.light,
+          onChange:e=>setConsecThresholds(t=>({...t,light:Math.max(0,Math.min(t.medium,+e.target.value||0))})),
+          style:{width:44,padding:"2px 4px",borderRadius:4,border:"1px solid rgba(255,255,255,.2)",
+            background:"rgba(255,255,255,.08)",color:"#fff",fontSize:10.5,fontFamily:"'DM Mono',monospace"}}),
+        el("span",{style:{fontSize:10.5,color:"rgba(255,255,255,.5)"}},"%")
+      ),
+      el("div",{style:{display:"flex",alignItems:"center",gap:5}},
+        el("div",{style:{width:11,height:11,borderRadius:3,background:"#6b7280",flexShrink:0}}),
+        el("span",{style:{fontSize:10.5,color:"rgba(255,255,255,.75)"}},"Below "+consecThresholds.light+"% / no data")
+      ),
+      el("button",{onClick:()=>setConsecThresholds({strong:100,medium:90,light:80}),
+        title:"Reset to defaults (100/90/80)",
+        style:{marginLeft:4,padding:"3px 9px",borderRadius:20,border:"0.5px solid rgba(255,255,255,.2)",
+          background:"transparent",color:"rgba(255,255,255,.5)",fontSize:10,cursor:"pointer"}},"Reset")
     ),
 
     // Similarity filter panel (shown when simShowPanel is true on board page)
@@ -6217,7 +6259,7 @@ function App(){
             simMode,simFilters,obMap,highlightId:null,
             lineSimMode,lineSimFilters,lineSimThreshold,
             lineSimSelectedId,onLineSimSelect:id=>setLineSimSelectedId(p=>p===id?null:id),
-            alwaysSimFilters,simGroups,boardZoom,setBoardZoom,gmtFocus})
+            alwaysSimFilters,simGroups,boardZoom,setBoardZoom,gmtFocus,consecThresholds})
         )
       ),
 
