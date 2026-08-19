@@ -1871,7 +1871,7 @@ function dayByDayFromChunks(chunks){
   return byDay;
 }
 
-function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={},initialSelectedMonthKeys=[],consecThresholds}){
+function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={},initialSelectedMonthKeys=[],consecThresholds,initialCustomStartDate=""}){
   // Deduplicate initialStyles by id to prevent ghost duplicates
   const dedupedInitial=initialStyles.filter((s,i,arr)=>arr.findIndex(x=>x.id===s.id)===i);
   const [styles,setStyles]=useState(dedupedInitial.map(s=>({...s})));
@@ -1893,6 +1893,7 @@ function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={},initialSelected
   // the canvas opens, then lives independently — changing it here never
   // affects the Planning Board tab's own filter, and vice versa.
   const [canvasSelectedMonthKeys,setCanvasSelectedMonthKeys]=useState(initialSelectedMonthKeys);
+  const [canvasCustomStartDate,setCanvasCustomStartDate]=useState(initialCustomStartDate);
   const [canvasMonthFilterOpen,setCanvasMonthFilterOpen]=useState(false);
   const canvasMonthOptions=useMemo(()=>{
     const seen=new Map();
@@ -1927,8 +1928,12 @@ function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={},initialSelected
       if(!from||effFrom<from)from=effFrom;
       if(!to||calTo>to)to=calTo;
     });
+    if(canvasCustomStartDate){
+      const custom=localDate(canvasCustomStartDate);
+      if(custom)from=custom;
+    }
     return{from,to};
-  },[canvasSelectedMonthKeys,canvasMonthOptions]);
+  },[canvasSelectedMonthKeys,canvasMonthOptions,canvasCustomStartDate]);
   // Powers the "By Consecutive Similarity" color mode — reuses the same
   // pairwise comparison already used by Line Similarity mode.
   const consecSimData=useMemo(()=>buildLineSimilarities(styles,obMap,
@@ -2730,6 +2735,16 @@ function CanvasEditor({initialStyles,onConfirm,onCancel,obMap={},initialSelected
                 el("span",{style:{fontSize:12.5,fontWeight:active?700:400,color:"#0f172a"}},m.label)
               );
             }),
+            canvasSelectedMonthKeys.length>0&&el("div",{style:{marginTop:6,paddingTop:8,borderTop:"1px solid #e2e8f0"}},
+              el("label",{style:{display:"block",fontSize:10.5,color:"#94a3b8",marginBottom:4}},
+                "Start from (optional — skips already-passed early days)"),
+              el("input",{type:"date",value:canvasCustomStartDate,
+                onChange:e=>setCanvasCustomStartDate(e.target.value),
+                style:{width:"100%",padding:"6px 8px",border:"1px solid #cbd5e1",borderRadius:6,fontSize:12}}),
+              canvasCustomStartDate&&el("button",{onClick:()=>setCanvasCustomStartDate(""),
+                style:{marginTop:5,fontSize:10.5,color:"#94a3b8",background:"none",border:"none",
+                  cursor:"pointer",textDecoration:"underline"}},"Clear — use month's own start")
+            ),
             canvasMonthOptions.length>0&&el("div",{style:{marginTop:6,paddingTop:6,borderTop:"1px solid #e2e8f0"}},
               el("button",{onClick:()=>setCanvasMonthFilterOpen(false),
                 style:{width:"100%",padding:"7px 0",border:"none",borderRadius:6,cursor:"pointer",
@@ -5253,6 +5268,11 @@ function App(){
   // Planning Board tab and the Canvas Editor. Always resets to these
   // defaults on reload; nothing here is saved anywhere.
   const [consecThresholds,setConsecThresholds]=useState({strong:100,medium:90,light:80});
+  // Optional: skip past the already-passed early days of a selected month —
+  // the plan gets updated mid-month, so those first days are often stale.
+  // If left blank, behaves exactly as before (starts from the real earliest
+  // data date in the selected months).
+  const [customStartDate,setCustomStartDate]=useState("");
   const [monthFilterOpen,setMonthFilterOpen]=useState(false);
   // Auto-detect which calendar months are actually present in the uploaded data, so the
   // dropdown can offer them directly (e.g. "September 2026") instead of a blank date picker.
@@ -5289,9 +5309,13 @@ function App(){
       if(!from||effFrom<from)from=effFrom;
       if(!to||calTo>to)to=calTo;
     });
+    if(customStartDate){
+      const custom=localDate(customStartDate);
+      if(custom)from=custom;
+    }
     const label=selected.length===1?selected[0].label:selected.length+" months selected";
     return{from,to,label};
-  },[selectedMonthKeys,boardMonthOptions]);
+  },[selectedMonthKeys,boardMonthOptions,customStartDate]);
   // Which garment type (if any) is focused via clicking a legend chip — matching styles stay
   // full-color/sharp, everything else dims. Read-only Planning Board only, not the canvas.
   const [gmtFocus,setGmtFocus]=useState(null);
@@ -5554,7 +5578,7 @@ function App(){
     display:"flex",flexDirection:"column",
     overflow:isLanding||isBoardPage?"hidden":"visible"}},
     canvasOpen&&el(ErrorBoundary,{key:"ce-"+fileKey},
-      el(CanvasEditor,{initialStyles:styles,onConfirm:handleConfirm,onCancel:()=>setCanvasOpen(false),key:fileKey+"_canvas",obMap,initialSelectedMonthKeys:selectedMonthKeys,consecThresholds})
+      el(CanvasEditor,{initialStyles:styles,onConfirm:handleConfirm,onCancel:()=>setCanvasOpen(false),key:fileKey+"_canvas",obMap,initialSelectedMonthKeys:selectedMonthKeys,consecThresholds,initialCustomStartDate:customStartDate})
     ),
 
     // Top nav — hidden on landing page
@@ -5626,6 +5650,16 @@ function App(){
                 );
               }),
               boardMonthOptions.length===0&&el("p",{style:{padding:10,fontSize:11.5,color:"#94a3b8"}},"No dated styles loaded."),
+              selectedMonthKeys.length>0&&el("div",{style:{marginTop:6,paddingTop:8,borderTop:"1px solid #e2e8f0"}},
+                el("label",{style:{display:"block",fontSize:10.5,color:"#94a3b8",marginBottom:4}},
+                  "Start from (optional — skips already-passed early days)"),
+                el("input",{type:"date",value:customStartDate,
+                  onChange:e=>setCustomStartDate(e.target.value),
+                  style:{width:"100%",padding:"6px 8px",border:"1px solid #cbd5e1",borderRadius:6,fontSize:12}}),
+                customStartDate&&el("button",{onClick:()=>setCustomStartDate(""),
+                  style:{marginTop:5,fontSize:10.5,color:"#94a3b8",background:"none",border:"none",
+                    cursor:"pointer",textDecoration:"underline"}},"Clear — use month's own start")
+              ),
               boardMonthOptions.length>0&&el("div",{style:{marginTop:6,paddingTop:6,borderTop:"1px solid #e2e8f0"}},
                 el("button",{onClick:()=>setMonthFilterOpen(false),
                   style:{width:"100%",padding:"7px 0",border:"none",borderRadius:6,cursor:"pointer",
