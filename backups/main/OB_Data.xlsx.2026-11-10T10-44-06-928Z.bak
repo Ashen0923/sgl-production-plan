@@ -1,0 +1,18 @@
+{
+  "name": "OB_Data.xlsx",
+  "path": "OB_Data.xlsx",
+  "sha": "5244b1551c36405cfc08bb3def0e97e1dd0a3b75",
+  "size": 15607584,
+  "url": "https://api.github.com/repos/Ashen0923/sgl-production-plan/contents/OB_Data.xlsx?ref=main",
+  "html_url": "https://github.com/Ashen0923/sgl-production-plan/blob/main/OB_Data.xlsx",
+  "git_url": "https://api.github.com/repos/Ashen0923/sgl-production-plan/git/blobs/5244b1551c36405cfc08bb3def0e97e1dd0a3b75",
+  "download_url": "https://raw.githubusercontent.com/Ashen0923/sgl-production-plan/main/OB_Data.xlsx",
+  "type": "file",
+  "content": "",
+  "encoding": "none",
+  "_links": {
+    "self": "https://api.github.com/repos/Ashen0923/sgl-production-plan/contents/OB_Data.xlsx?ref=main",
+    "git": "https://api.github.com/repos/Ashen0923/sgl-production-plan/git/blobs/5244b1551c36405cfc08bb3def0e97e1dd0a3b75",
+    "html": "https://github.com/Ashen0923/sgl-production-plan/blob/main/OB_Data.xlsx"
+  }
+}
